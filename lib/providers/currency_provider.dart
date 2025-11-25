@@ -33,7 +33,11 @@ class CurrencyProvider with ChangeNotifier {
       
       // Check if API response has rates
       if (data.containsKey('rates') && data['rates'] is Map) {
-        _rates = Map<String, double>.from(data['rates']);
+        // Convert rates to Map<String, double>
+        // API may return int or double, so we need to handle both
+        _rates = (data['rates'] as Map).map<String, double>(
+          (key, value) => MapEntry(key.toString(), (value as num).toDouble()),
+        );
         
         // IMPORTANT: Add base currency with rate 1.0
         _rates[_baseCurrency] = 1.0;
