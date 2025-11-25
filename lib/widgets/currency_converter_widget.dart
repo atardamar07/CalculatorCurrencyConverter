@@ -90,6 +90,7 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
     if (controller == null) return;
     
     final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
+    final settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
     
     if (key == 'C') {
       controller.clear();
@@ -113,15 +114,61 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
         double? amount = double.tryParse(newText);
         if (amount != null) {
           currencyProvider.setAmount(amount);
-        } else if (newText.isEmpty) {
+        } else if (newText.isEmpty || newText == '0' || newText == '0.') {
           currencyProvider.setAmount(0);
+          controller.text = '0';
+          controller.selection = TextSelection.fromPosition(
+            TextPosition(offset: 1),
+          );
         }
       }
-    } else {
-      // Insert at cursor position
+    } else if (key == '.') {
+      // Decimal point - check if already exists
       final text = controller.text;
       final selection = controller.selection;
-      final newText = text.replaceRange(
+      
+      // If text is empty or just "0", replace with "0."
+      if (text.isEmpty || text == '0' || _isZeroValue(text)) {
+        controller.text = '0.';
+        controller.selection = TextSelection.fromPosition(
+          TextPosition(offset: 2),
+        );
+        currencyProvider.setAmount(0);
+      } else if (!text.contains('.')) {
+        // Insert decimal point if it doesn't exist
+        final newText = text.replaceRange(
+          selection.start,
+          selection.end,
+          '.',
+        );
+        controller.text = newText;
+        controller.selection = TextSelection.fromPosition(
+          TextPosition(offset: selection.start + 1),
+        );
+        
+        double? amount = double.tryParse(newText);
+        if (amount != null) {
+          currencyProvider.setAmount(amount);
+        }
+      }
+      _isUserEditing[_selectedCurrency!] = true;
+    } else {
+      // Number input
+      final text = controller.text;
+      final selection = controller.selection;
+      
+      // If current value is 0 or 0.00 format, clear it first
+      String currentText = text;
+      if (_isZeroValue(text)) {
+        currentText = '';
+        controller.text = '';
+        controller.selection = TextSelection.fromPosition(
+          TextPosition(offset: 0),
+        );
+      }
+      
+      // Insert number at cursor position
+      final newText = currentText.replaceRange(
         selection.start,
         selection.end,
         key,
@@ -142,6 +189,16 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
       }
       _isUserEditing[_selectedCurrency!] = true;
     }
+  }
+
+  // Check if text represents zero value (0, 0.0, 0.00, etc.)
+  bool _isZeroValue(String text) {
+    if (text.isEmpty) return false;
+    // Remove any formatting and check if it's zero
+    final cleanedText = text.replaceAll(RegExp(r'[^\d.]'), '');
+    final value = double.tryParse(cleanedText);
+    if (value == null) return false;
+    return value == 0.0;
   }
 
   @override
@@ -247,12 +304,20 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
                                   if (widget.onCurrencyFieldTapped != null) {
                                     widget.onCurrencyFieldTapped!();
                                   }
-                                  // Move cursor to end when tapped
+                                  // Move cursor to end when tapped and prepare for input
                                   final controller = _controllers[currency];
                                   if (controller != null) {
-                                    controller.selection = TextSelection.fromPosition(
-                                      TextPosition(offset: controller.text.length),
-                                    );
+                                    // If the value is zero, prepare to clear it on first input
+                                    if (_isZeroValue(controller.text)) {
+                                      // Keep the text but mark that we'll clear on first number input
+                                      controller.selection = TextSelection.fromPosition(
+                                        TextPosition(offset: controller.text.length),
+                                      );
+                                    } else {
+                                      controller.selection = TextSelection.fromPosition(
+                                        TextPosition(offset: controller.text.length),
+                                      );
+                                    }
                                   }
                                 },
                               ),
