@@ -35,7 +35,8 @@ class CalculatorProvider with ChangeNotifier {
 
   void evaluate() {
     try {
-      Parser p = Parser();
+      // Use new GrammarParser instead of deprecated Parser
+      GrammarParser p = GrammarParser();
       // Replace visual symbols with math operators if needed (e.g., '×' to '*', '÷' to '/')
       String finalExpression = _expression
           .replaceAll('×', '*')
@@ -43,8 +44,8 @@ class CalculatorProvider with ChangeNotifier {
           .replaceAll('π', '3.1415926535897932');
       
       Expression exp = p.parse(finalExpression);
-      ContextModel cm = ContextModel();
-      double eval = exp.evaluate(EvaluationType.REAL, cm);
+      // Use new RealEvaluator instead of deprecated evaluate method
+      double eval = RealEvaluator().evaluate(exp).toDouble();
       
       // Format result
       if (eval % 1 == 0) {
