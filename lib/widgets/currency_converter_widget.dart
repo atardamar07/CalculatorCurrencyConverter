@@ -115,15 +115,27 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
                                   if (val.isNotEmpty) {
                                     double? newAmount = double.tryParse(val);
                                     if (newAmount != null) {
-                                      // Update base currency to this one and amount
-                                      currencyProvider.setBaseCurrency(currency);
-                                      currencyProvider.setAmount(newAmount);
+                                      // Only update amount, base currency stays the same until tap
+                                      // This allows real-time updates
+                                      if (currency == currencyProvider.baseCurrency) {
+                                        currencyProvider.setAmount(newAmount);
+                                      } else {
+                                        // User is editing a non-base currency
+                                        // First make it base, then set amount
+                                        currencyProvider.setBaseCurrency(currency);
+                                        currencyProvider.setAmount(newAmount);
+                                      }
                                     }
+                                  } else {
+                                    // Empty input, set amount to 0
+                                    currencyProvider.setAmount(0);
                                   }
                                 },
                                 onTap: () {
-                                  // When tapped, make this the base currency
-                                  currencyProvider.setBaseCurrency(currency);
+                                  // When tapped, make this the base currency if not already
+                                  if (currency != currencyProvider.baseCurrency) {
+                                    currencyProvider.setBaseCurrency(currency);
+                                  }
                                 },
                               ),
                             ),

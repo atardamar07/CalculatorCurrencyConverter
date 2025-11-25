@@ -34,31 +34,35 @@ class CalculatorWidget extends StatelessWidget {
         Expanded(
           flex: 2,
           child: Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(12),
             alignment: Alignment.bottomRight,
             child: Column(
               mainAxisAlignment: MainAxisAlignment.end,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text(
-                  calculatorProvider.expression,
-                  style: TextStyle(
-                    fontSize: 24,
-                    color: Theme.of(context).textTheme.bodyLarge?.color?.withValues(alpha: 0.7),
+                Flexible(
+                  child: Text(
+                    calculatorProvider.expression,
+                    style: TextStyle(
+                      fontSize: 22,
+                      color: Theme.of(context).textTheme.bodyLarge?.color?.withValues(alpha: 0.7),
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  displayResult,
-                  style: TextStyle(
-                    fontSize: 48,
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).textTheme.bodyLarge?.color,
+                const SizedBox(height: 6),
+                Flexible(
+                  child: Text(
+                    displayResult,
+                    style: TextStyle(
+                      fontSize: 44,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).textTheme.bodyLarge?.color,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),

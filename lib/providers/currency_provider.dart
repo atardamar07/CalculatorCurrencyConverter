@@ -10,6 +10,7 @@ class CurrencyProvider with ChangeNotifier {
   List<String> _activeCurrencies = ['USD', 'EUR', 'TRY', 'GBP']; // Default active
   double _amount = 1.0;
   bool _isLoading = false;
+  String? _errorMessage; // Track error details
 
   CurrencyProvider() {
     _loadPreferences();
@@ -21,17 +22,31 @@ class CurrencyProvider with ChangeNotifier {
   List<String> get activeCurrencies => _activeCurrencies;
   double get amount => _amount;
   bool get isLoading => _isLoading;
+  String? get errorMessage => _errorMessage; // Expose error message
 
   Future<void> fetchRates() async {
     _isLoading = true;
+    _errorMessage = null; // Clear previous errors
     notifyListeners();
     try {
       final data = await _currencyService.fetchRates(_baseCurrency);
-      _rates = Map<String, double>.from(data['rates']);
-      _isLoading = false;
-      notifyListeners();
+      
+      // Check if API response has rates
+      if (data.containsKey('rates') && data['rates'] is Map) {
+        _rates = Map<String, double>.from(data['rates']);
+        
+        // IMPORTANT: Add base currency with rate 1.0
+        _rates[_baseCurrency] = 1.0;
+        
+        _isLoading = false;
+        notifyListeners();
+      } else {
+        throw Exception('Invalid API response format');
+      }
     } catch (e) {
       _isLoading = false;
+      _rates = {};
+      _errorMessage = e.toString(); // Save detailed error
       notifyListeners();
     }
   }

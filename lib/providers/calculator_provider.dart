@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:math_expressions/math_expressions.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/ad_service.dart';
 
 class CalculatorProvider with ChangeNotifier {
@@ -11,10 +12,24 @@ class CalculatorProvider with ChangeNotifier {
 
   CalculatorProvider() {
     _adService.createInterstitialAd();
+    _loadClearCount(); // Load saved count on startup
   }
 
   String get expression => _expression;
   String get result => _result;
+
+  // Load clear count from SharedPreferences
+  Future<void> _loadClearCount() async {
+    final prefs = await SharedPreferences.getInstance();
+    _clearCount = prefs.getInt('clear_count') ?? 0;
+    notifyListeners();
+  }
+
+  // Save clear count to SharedPreferences
+  Future<void> _saveClearCount() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('clear_count', _clearCount);
+  }
 
   void addToExpression(String value) {
     _expression += value;
@@ -28,9 +43,12 @@ class CalculatorProvider with ChangeNotifier {
     
     // Smart ad display: only show every N clears
     _clearCount++;
+    _saveClearCount(); // Save after increment
+    
     if (_clearCount >= _adFrequency) {
       _adService.showInterstitialAd();
       _clearCount = 0; // Reset counter
+      _saveClearCount(); // Save reset
     }
   }
 
