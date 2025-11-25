@@ -6,6 +6,8 @@ class CalculatorProvider with ChangeNotifier {
   String _expression = '';
   String _result = '0';
   final AdService _adService = AdService();
+  int _clearCount = 0; // Track clear button presses
+  static const int _adFrequency = 5; // Show ad every 5 clears
 
   CalculatorProvider() {
     _adService.createInterstitialAd();
@@ -23,7 +25,13 @@ class CalculatorProvider with ChangeNotifier {
     _expression = '';
     _result = '0';
     notifyListeners();
-    _adService.showInterstitialAd();
+    
+    // Smart ad display: only show every N clears
+    _clearCount++;
+    if (_clearCount >= _adFrequency) {
+      _adService.showInterstitialAd();
+      _clearCount = 0; // Reset counter
+    }
   }
 
   void delete() {
