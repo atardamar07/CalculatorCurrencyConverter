@@ -33,7 +33,6 @@ class CurrencyProvider with ChangeNotifier {
     } catch (e) {
       _isLoading = false;
       notifyListeners();
-      print("Error fetching rates: $e");
     }
   }
 

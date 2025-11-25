@@ -32,7 +32,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 onChanged: (value) {
                   themeProvider.toggleTheme(value);
                 },
-                activeColor: Theme.of(context).colorScheme.secondary,
+                activeThumbColor: Theme.of(context).colorScheme.secondary,
               ),
             ],
           ),

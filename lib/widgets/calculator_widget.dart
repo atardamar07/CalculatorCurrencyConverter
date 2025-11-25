@@ -44,7 +44,7 @@ class CalculatorWidget extends StatelessWidget {
                   calculatorProvider.expression,
                   style: TextStyle(
                     fontSize: 24,
-                    color: Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.7),
+                    color: Theme.of(context).textTheme.bodyLarge?.color?.withValues(alpha: 0.7),
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -118,7 +118,7 @@ class CalculatorWidget extends StatelessWidget {
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: _isOperator(key)
-                    ? Theme.of(context).colorScheme.secondary.withOpacity(0.2)
+                    ? Theme.of(context).colorScheme.secondary.withValues(alpha: 0.2)
                     : _isEqual(key)
                         ? Theme.of(context).colorScheme.primary
                         : Theme.of(context).cardColor,
