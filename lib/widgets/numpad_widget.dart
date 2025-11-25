@@ -19,7 +19,7 @@ class NumpadWidget extends StatelessWidget {
           _buildRow(context, ['7', '8', '9']),
           _buildRow(context, ['4', '5', '6']),
           _buildRow(context, ['1', '2', '3']),
-          _buildRow(context, ['C', '0', if (showDecimal) '.']),
+          _buildRow(context, ['C', '0', if (showDecimal) '.', '⌫']),
         ],
       ),
     );

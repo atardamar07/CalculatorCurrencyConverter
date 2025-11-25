@@ -3,10 +3,20 @@ import 'package:provider/provider.dart';
 import '../providers/currency_provider.dart';
 import '../providers/settings_provider.dart';
 import '../screens/currency_selection_screen.dart';
-import '../widgets/numpad_widget.dart';
 
 class CurrencyConverterWidget extends StatefulWidget {
-  const CurrencyConverterWidget({super.key});
+  final bool isActive;
+  final Function(String)? onNumpadKey;
+  final VoidCallback? onCurrencyFieldTapped;
+  final Function(Function(String))? onNumpadHandlerReady;
+
+  const CurrencyConverterWidget({
+    super.key,
+    this.isActive = false,
+    this.onNumpadKey,
+    this.onCurrencyFieldTapped,
+    this.onNumpadHandlerReady,
+  });
 
   @override
   State<CurrencyConverterWidget> createState() => _CurrencyConverterWidgetState();
@@ -16,6 +26,29 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
   bool _isEditing = false;
   final Map<String, TextEditingController> _controllers = {};
   String? _selectedCurrency; // Track which currency is selected for numpad input
+  final Map<String, bool> _isUserEditing = {}; // Track if user is actively editing
+
+  @override
+  void initState() {
+    super.initState();
+    // Register numpad handler with parent
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.onNumpadHandlerReady != null) {
+        widget.onNumpadHandlerReady!(handleNumpadKey);
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(CurrencyConverterWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Re-register if handler changed
+    if (widget.onNumpadHandlerReady != null && oldWidget.onNumpadHandlerReady != widget.onNumpadHandlerReady) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        widget.onNumpadHandlerReady!(handleNumpadKey);
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -29,29 +62,61 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
   TextEditingController _getController(String currency, String value) {
     if (!_controllers.containsKey(currency)) {
       _controllers[currency] = TextEditingController(text: value);
+      _isUserEditing[currency] = false;
     } else {
-      // Only update text if value changed
-      if (_controllers[currency]!.text != value) {
+      // Only update text if value changed AND user is not actively editing
+      if (!_isUserEditing[currency]! && _controllers[currency]!.text != value) {
         final selection = _controllers[currency]!.selection;
         _controllers[currency]!.text = value;
         // Restore cursor position if valid
         if (selection.start <= value.length) {
           _controllers[currency]!.selection = selection;
+        } else {
+          // If cursor position is invalid, place at end
+          _controllers[currency]!.selection = TextSelection.fromPosition(
+            TextPosition(offset: value.length),
+          );
         }
       }
     }
     return _controllers[currency]!;
   }
 
-  void _handleNumpadKey(String key, CurrencyProvider currencyProvider) {
-    if (_selectedCurrency == null) return;
+  // Public method to be called from parent
+  void handleNumpadKey(String key) {
+    if (!widget.isActive || _selectedCurrency == null) return;
     
     final controller = _controllers[_selectedCurrency];
     if (controller == null) return;
     
+    final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
+    
     if (key == 'C') {
       controller.clear();
       currencyProvider.setAmount(0);
+      _isUserEditing[_selectedCurrency!] = false;
+    } else if (key == '⌫') {
+      // Backspace
+      final text = controller.text;
+      final selection = controller.selection;
+      if (selection.start > 0) {
+        final newText = text.replaceRange(
+          selection.start - 1,
+          selection.start,
+          '',
+        );
+        controller.text = newText;
+        controller.selection = TextSelection.fromPosition(
+          TextPosition(offset: selection.start - 1),
+        );
+        
+        double? amount = double.tryParse(newText);
+        if (amount != null) {
+          currencyProvider.setAmount(amount);
+        } else if (newText.isEmpty) {
+          currencyProvider.setAmount(0);
+        }
+      }
     } else {
       // Insert at cursor position
       final text = controller.text;
@@ -62,8 +127,9 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
         key,
       );
       controller.text = newText;
+      final newCursorPos = selection.start + 1;
       controller.selection = TextSelection.fromPosition(
-        TextPosition(offset: selection.start + 1),
+        TextPosition(offset: newCursorPos),
       );
       
       // Update provider
@@ -74,6 +140,7 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
         }
         currencyProvider.setAmount(amount);
       }
+      _isUserEditing[_selectedCurrency!] = true;
     }
   }
 
@@ -128,186 +195,11 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
                   itemCount: currencyProvider.activeCurrencies.length,
                   itemBuilder: (context, index) {
                     final currency = currencyProvider.activeCurrencies[index];
-                    // Calculate value based on base currency
-                    // If this is the base currency, show amount.
-                    // Else show converted amount.
-                    // But we want all to be editable.
-                    // If user edits one, that becomes base.
                     
                     double value;
                     if (currency == currencyProvider.baseCurrency) {
                       value = currencyProvider.amount;
                     } else {
-                      // Convert base amount to this currency
-                      // base -> target = amount * rate(target) / rate(base)
-                      // Since our rates are based on USD (from API), we need to handle cross rates if base is not USD.
-                      // Provider logic: convert(target) assumes base is set correctly.
-                      // But provider.convert uses _rates[target]. If _baseCurrency is not USD, we need to adjust.
-                      // Wait, the API returns rates relative to USD.
-                      // If user selects EUR as base, we need to fetch rates for EUR or calculate cross rates.
-                      // Provider `fetchRates` fetches for `_baseCurrency`. So `_rates` are relative to `_baseCurrency`.
-                      // So `convert` is correct: amount * rate.
-                      value = currencyProvider.convert(currency);
-                    }
-
-                    return ListTile(
-                      title: Text(
-                        currency,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      trailing: _isEditing
-                          ? IconButton(
-                              icon: const Icon(Icons.delete, color: Colors.red),
-                              onPressed: () {
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../providers/currency_provider.dart';
-import '../providers/settings_provider.dart';
-import '../screens/currency_selection_screen.dart';
-import '../widgets/numpad_widget.dart';
-
-class CurrencyConverterWidget extends StatefulWidget {
-  const CurrencyConverterWidget({super.key});
-
-  @override
-  State<CurrencyConverterWidget> createState() => _CurrencyConverterWidgetState();
-}
-
-class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
-  bool _isEditing = false;
-  final Map<String, TextEditingController> _controllers = {};
-  String? _selectedCurrency; // Track which currency is selected for numpad input
-
-  @override
-  void dispose() {
-    // Clean up all controllers
-    for (var controller in _controllers.values) {
-      controller.dispose();
-    }
-    super.dispose();
-  }
-
-  TextEditingController _getController(String currency, String value) {
-    if (!_controllers.containsKey(currency)) {
-      _controllers[currency] = TextEditingController(text: value);
-    } else {
-      // Only update text if value changed
-      if (_controllers[currency]!.text != value) {
-        final selection = _controllers[currency]!.selection;
-        _controllers[currency]!.text = value;
-        // Restore cursor position if valid
-        if (selection.start <= value.length) {
-          _controllers[currency]!.selection = selection;
-        }
-      }
-    }
-    return _controllers[currency]!;
-  }
-
-  void _handleNumpadKey(String key, CurrencyProvider currencyProvider) {
-    if (_selectedCurrency == null) return;
-    
-    final controller = _controllers[_selectedCurrency];
-    if (controller == null) return;
-    
-    if (key == 'C') {
-      controller.clear();
-      currencyProvider.setAmount(0);
-    } else {
-      // Insert at cursor position
-      final text = controller.text;
-      final selection = controller.selection;
-      final newText = text.replaceRange(
-        selection.start,
-        selection.end,
-        key,
-      );
-      controller.text = newText;
-      controller.selection = TextSelection.fromPosition(
-        TextPosition(offset: selection.start + 1),
-      );
-      
-      // Update provider
-      double? amount = double.tryParse(newText);
-      if (amount != null) {
-        if (_selectedCurrency != currencyProvider.baseCurrency) {
-          currencyProvider.setBaseCurrency(_selectedCurrency!);
-        }
-        currencyProvider.setAmount(amount);
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final currencyProvider = Provider.of<CurrencyProvider>(context);
-    final settingsProvider = Provider.of<SettingsProvider>(context);
-
-    return Column(
-      children: [
-        // Header
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                "Currencies",
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.add),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const CurrencySelectionScreen()),
-                      );
-                    },
-                  ),
-                  IconButton(
-                    icon: Icon(_isEditing ? Icons.check : Icons.edit),
-                    onPressed: () {
-                      setState(() {
-                        _isEditing = !_isEditing;
-                      });
-                    },
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const Divider(height: 1),
-        // List
-        Expanded(
-          flex: 3,
-          child: currencyProvider.isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : ListView.builder(
-                  itemCount: currencyProvider.activeCurrencies.length,
-                  itemBuilder: (context, index) {
-                    final currency = currencyProvider.activeCurrencies[index];
-                    // Calculate value based on base currency
-                    // If this is the base currency, show amount.
-                    // Else show converted amount.
-                    // But we want all to be editable.
-                    // If user edits one, that becomes base.
-                    
-                    double value;
-                    if (currency == currencyProvider.baseCurrency) {
-                      value = currencyProvider.amount;
-                    } else {
-                      // Convert base amount to this currency
-                      // base -> target = amount * rate(target) / rate(base)
-                      // Since our rates are based on USD (from API), we need to handle cross rates if base is not USD.
-                      // Provider logic: convert(target) assumes base is set correctly.
-                      // But provider.convert uses _rates[target]. If _baseCurrency is not USD, we need to adjust.
-                      // Wait, the API returns rates relative to USD.
-                      // If user selects EUR as base, we need to fetch rates for EUR or calculate cross rates.
-                      // Provider `fetchRates` fetches for `_baseCurrency`. So `_rates` are relative to `_baseCurrency`.
-                      // So `convert` is correct: amount * rate.
                       value = currencyProvider.convert(currency);
                     }
 
@@ -335,27 +227,32 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
                                   border: InputBorder.none,
                                 ),
                                 textAlign: TextAlign.right,
+                                readOnly: true, // Make read-only to use numpad only
                                 onChanged: (val) {
-                                  if (val.isNotEmpty) {
-                                    double? newAmount = double.tryParse(val);
-                                    if (newAmount != null) {
-                                      if (currency == currencyProvider.baseCurrency) {
-                                        currencyProvider.setAmount(newAmount);
-                                      } else {
-                                        currencyProvider.setBaseCurrency(currency);
-                                        currencyProvider.setAmount(newAmount);
-                                      }
-                                    }
-                                  } else {
-                                    currencyProvider.setAmount(0);
-                                  }
+                                  // This won't be called since readOnly is true
+                                  // But we keep it for safety
                                 },
                                 onTap: () {
                                   setState(() {
+                                    // Reset editing flag for previously selected currency
+                                    if (_selectedCurrency != null && _selectedCurrency != currency) {
+                                      _isUserEditing[_selectedCurrency!] = false;
+                                    }
                                     _selectedCurrency = currency;
+                                    _isUserEditing[currency] = true;
                                   });
                                   if (currency != currencyProvider.baseCurrency) {
                                     currencyProvider.setBaseCurrency(currency);
+                                  }
+                                  if (widget.onCurrencyFieldTapped != null) {
+                                    widget.onCurrencyFieldTapped!();
+                                  }
+                                  // Move cursor to end when tapped
+                                  final controller = _controllers[currency];
+                                  if (controller != null) {
+                                    controller.selection = TextSelection.fromPosition(
+                                      TextPosition(offset: controller.text.length),
+                                    );
                                   }
                                 },
                               ),
@@ -363,15 +260,6 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
                     );
                   },
                 ),
-        ),
-        const Divider(height: 1),
-        // Numpad
-        Container(
-          height: 240,
-          padding: const EdgeInsets.all(8),
-          child: NumpadWidget(
-            onKeyPressed: (key) => _handleNumpadKey(key, currencyProvider),
-          ),
         ),
       ],
     );

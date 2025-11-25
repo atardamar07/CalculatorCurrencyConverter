@@ -5,8 +5,13 @@ import '../providers/settings_provider.dart';
 
 class CalculatorWidget extends StatelessWidget {
   final bool isScientific;
+  final bool isActive;
 
-  const CalculatorWidget({super.key, required this.isScientific});
+  const CalculatorWidget({
+    super.key,
+    required this.isScientific,
+    this.isActive = false,
+  });
 
   @override
   Widget build(BuildContext context) {
