@@ -33,24 +33,50 @@ class NumpadWidget extends StatelessWidget {
           return Expanded(
             child: Padding(
               padding: const EdgeInsets.all(4),
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: key == 'C'
-                      ? Theme.of(context).colorScheme.error.withValues(alpha: 0.2)
-                      : Theme.of(context).cardColor,
-                  foregroundColor: key == 'C'
-                      ? Theme.of(context).colorScheme.error
-                      : Theme.of(context).textTheme.bodyLarge?.color,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: key == 'C'
+                      ? LinearGradient(
+                          colors: [
+                            Theme.of(context).colorScheme.error.withValues(alpha: 0.3),
+                            Theme.of(context).colorScheme.error.withValues(alpha: 0.2),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        )
+                      : null,
+                  color: key == 'C' ? null : Theme.of(context).cardColor,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: key == 'C'
+                          ? Theme.of(context).colorScheme.error.withValues(alpha: 0.2)
+                          : Colors.black.withValues(alpha: 0.1),
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-                onPressed: () => onKeyPressed(key),
-                child: Text(
-                  key,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.transparent,
+                    shadowColor: Colors.transparent,
+                    foregroundColor: key == 'C'
+                        ? Theme.of(context).colorScheme.error
+                        : Theme.of(context).textTheme.bodyLarge?.color,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    padding: EdgeInsets.zero,
+                  ),
+                  onPressed: () => onKeyPressed(key),
+                  child: Text(
+                    key,
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
+                    ),
                   ),
                 ),
               ),

@@ -15,60 +15,71 @@ class AdService {
   int maxFailedLoadAttempts = 3;
   Timer? _adTimer;
   bool _isInitialized = false;
+  bool _isAdShowing = false; // Track if ad is currently showing
   
-  static const int _adIntervalMinutes = 5; // Show ad every 5 minutes
-  static const String _lastAdTimestampKey = 'last_ad_timestamp';
+  static const int _adIntervalMinutes = 2; // Show ad every 2 minutes
+  static const String _lastAdDismissedTimestampKey = 'last_ad_dismissed_timestamp';
 
-  // Test ID for Interstitial Ad
+  // Real AdMob Ad Unit ID
   final String _adUnitId = Platform.isAndroid
-      ? 'ca-app-pub-3940256099942544/1033173712'
-      : 'ca-app-pub-3940256099942544/4411468910';
+      ? 'ca-app-pub-1498129057551982/9357968504'
+      : 'ca-app-pub-1498129057551982/9357968504'; // iOS ID (same for now)
 
   void _initializeAdTimer() async {
     if (_isInitialized) return;
     _isInitialized = true;
     
-    // Load last ad timestamp
+    // Load last ad dismissed timestamp (when user closed the ad)
     final prefs = await SharedPreferences.getInstance();
-    final lastAdTimestamp = prefs.getInt(_lastAdTimestampKey);
+    final lastAdDismissedTimestamp = prefs.getInt(_lastAdDismissedTimestampKey);
     
     // Create ad first
     createInterstitialAd();
     
-    if (lastAdTimestamp != null) {
-      final lastAdTime = DateTime.fromMillisecondsSinceEpoch(lastAdTimestamp);
+    if (lastAdDismissedTimestamp != null) {
+      final lastAdDismissedTime = DateTime.fromMillisecondsSinceEpoch(lastAdDismissedTimestamp);
       final now = DateTime.now();
-      final difference = now.difference(lastAdTime);
+      final difference = now.difference(lastAdDismissedTime);
       
-      // If 5 minutes have passed since last ad, show ad after a short delay
-      if (difference.inMinutes >= _adIntervalMinutes) {
+      // If 2 minutes have passed since last ad was dismissed, show ad after a short delay
+      if (difference.inSeconds >= (_adIntervalMinutes * 60)) {
         Future.delayed(const Duration(seconds: 3), () {
-          showInterstitialAd();
+          if (!_isAdShowing) {
+            showInterstitialAd();
+          }
         });
       } else {
-        // Calculate remaining time until next ad
+        // Calculate remaining time until next ad (in seconds for 2 minutes)
         final remainingSeconds = (_adIntervalMinutes * 60) - difference.inSeconds;
         
         // Schedule ad to show after remaining time
         Future.delayed(Duration(seconds: remainingSeconds), () {
-          createInterstitialAd();
-          Future.delayed(const Duration(seconds: 2), () {
-            showInterstitialAd();
-          });
+          if (!_isAdShowing) {
+            createInterstitialAd();
+            Future.delayed(const Duration(seconds: 2), () {
+              if (!_isAdShowing && _interstitialAd != null) {
+                showInterstitialAd();
+              }
+            });
+          }
         });
       }
     } else {
-      // First time - show ad after 5 minutes
+      // First time - show ad after 2 minutes
       Future.delayed(const Duration(minutes: _adIntervalMinutes), () {
-        createInterstitialAd();
-        Future.delayed(const Duration(seconds: 2), () {
-          showInterstitialAd();
-        });
+        if (!_isAdShowing) {
+          createInterstitialAd();
+          Future.delayed(const Duration(seconds: 2), () {
+            if (!_isAdShowing && _interstitialAd != null) {
+              showInterstitialAd();
+            }
+          });
+        }
       });
     }
     
-    // Start periodic timer to check every minute
-    _adTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
+    // Start periodic timer to check every 30 seconds (more frequent for 2 minute interval)
+    _adTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
       _checkAndShowAd().catchError((error) {
         // Handle any errors silently
       });
@@ -76,26 +87,31 @@ class AdService {
   }
 
   Future<void> _checkAndShowAd() async {
-    final prefs = await SharedPreferences.getInstance();
-    final lastAdTimestamp = prefs.getInt(_lastAdTimestampKey);
-    
-    if (lastAdTimestamp == null) {
-      // First time - don't show ad immediately, wait for 5 minutes
+    // Don't show ad if one is already showing
+    if (_isAdShowing) {
       return;
     }
     
-    final lastAdTime = DateTime.fromMillisecondsSinceEpoch(lastAdTimestamp);
-    final now = DateTime.now();
-    final difference = now.difference(lastAdTime);
+    final prefs = await SharedPreferences.getInstance();
+    final lastAdDismissedTimestamp = prefs.getInt(_lastAdDismissedTimestampKey);
     
-    // Show ad if 5 minutes or more have passed
-    if (difference.inMinutes >= _adIntervalMinutes) {
+    if (lastAdDismissedTimestamp == null) {
+      // First time - don't show ad immediately, wait for 2 minutes
+      return;
+    }
+    
+    final lastAdDismissedTime = DateTime.fromMillisecondsSinceEpoch(lastAdDismissedTimestamp);
+    final now = DateTime.now();
+    final difference = now.difference(lastAdDismissedTime);
+    
+    // Show ad only if 2 minutes or more have passed since last ad was dismissed
+    if (difference.inSeconds >= (_adIntervalMinutes * 60)) {
       // Make sure we have an ad loaded
       if (_interstitialAd == null) {
         createInterstitialAd();
         // Wait for ad to load (non-blocking)
         Future.delayed(const Duration(seconds: 2), () {
-          if (_interstitialAd != null) {
+          if (_interstitialAd != null && !_isAdShowing) {
             showInterstitialAd();
           }
         });
@@ -126,23 +142,38 @@ class AdService {
   }
 
   void showInterstitialAd() async {
+    // Don't show if ad is already showing
+    if (_isAdShowing) {
+      return;
+    }
+    
     if (_interstitialAd == null) {
       createInterstitialAd(); // Try to load for next time
       return;
     }
     
-    // Save current timestamp
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_lastAdTimestampKey, DateTime.now().millisecondsSinceEpoch);
+    // Mark that ad is showing
+    _isAdShowing = true;
     
     _interstitialAd!.fullScreenContentCallback = FullScreenContentCallback(
-      onAdShowedFullScreenContent: (InterstitialAd ad) {},
-      onAdDismissedFullScreenContent: (InterstitialAd ad) {
+      onAdShowedFullScreenContent: (InterstitialAd ad) {
+        // Ad is now showing
+      },
+      onAdDismissedFullScreenContent: (InterstitialAd ad) async {
+        // User closed the ad - save timestamp and reset flag
+        _isAdShowing = false;
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt(_lastAdDismissedTimestampKey, DateTime.now().millisecondsSinceEpoch);
+        
         ad.dispose();
+        _interstitialAd = null;
         createInterstitialAd();
       },
       onAdFailedToShowFullScreenContent: (InterstitialAd ad, AdError error) {
+        // Ad failed to show - reset flag
+        _isAdShowing = false;
         ad.dispose();
+        _interstitialAd = null;
         createInterstitialAd();
       },
     );
