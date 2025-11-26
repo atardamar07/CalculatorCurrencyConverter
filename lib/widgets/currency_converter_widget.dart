@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/currency_provider.dart';
+import '../providers/calculator_provider.dart';
 import '../providers/settings_provider.dart';
 import '../screens/currency_selection_screen.dart';
+import '../utils/currency_flags.dart';
 
 class CurrencyConverterWidget extends StatefulWidget {
   final bool isActive;
@@ -261,6 +263,10 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
                     }
 
                     return ListTile(
+                      leading: Text(
+                        getCurrencyFlag(currency),
+                        style: const TextStyle(fontSize: 24),
+                      ),
                       title: Text(
                         currency,
                         style: const TextStyle(fontWeight: FontWeight.bold),
@@ -298,6 +304,26 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
                                     _selectedCurrency = currency;
                                     _isUserEditing[currency] = true;
                                   });
+                                  
+                                  // Check if calculator has a valid result and use it
+                                  final calculatorProvider = Provider.of<CalculatorProvider>(context, listen: false);
+                                  final calcResult = calculatorProvider.result;
+                                  final calcValue = double.tryParse(calcResult);
+                                  
+                                  if (calcValue != null && calcResult != 'Error' && calcResult != '0') {
+                                    // Use calculator result as the amount
+                                    currencyProvider.setAmount(calcValue);
+                                    final controller = _controllers[currency];
+                                    if (controller != null) {
+                                      final settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
+                                      controller.text = calcValue.toStringAsFixed(settingsProvider.precision);
+                                      controller.selection = TextSelection.fromPosition(
+                                        TextPosition(offset: controller.text.length),
+                                      );
+                                      _isUserEditing[currency] = true;
+                                    }
+                                  }
+                                  
                                   if (currency != currencyProvider.baseCurrency) {
                                     currencyProvider.setBaseCurrency(currency);
                                   }

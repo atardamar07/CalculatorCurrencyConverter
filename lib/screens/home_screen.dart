@@ -41,9 +41,9 @@ class _HomeScreenState extends State<HomeScreen> {
             dense: true,
           ),
           const Divider(height: 1, thickness: 1),
-          // Calculator Section
+          // Calculator Section - reduced size
           Expanded(
-            flex: 5,
+            flex: 3,
             child: GestureDetector(
               onTap: () {
                 setState(() {
@@ -83,17 +83,13 @@ class _HomeScreenState extends State<HomeScreen> {
           const Divider(height: 1, thickness: 1),
           // Shared Numpad
           Container(
-            height: 240,
+            height: _activeMode == ActiveMode.calculator ? 320 : 240,
             padding: const EdgeInsets.all(8),
-            child: NumpadWidget(
-              onKeyPressed: (key) {
-                if (_activeMode == ActiveMode.calculator) {
-                  _handleCalculatorKey(key);
-                } else {
-                  _handleCurrencyKey(key);
-                }
-              },
-            ),
+            child: _activeMode == ActiveMode.calculator
+                ? _buildCalculatorNumpad()
+                : NumpadWidget(
+                    onKeyPressed: (key) => _handleCurrencyKey(key),
+                  ),
           ),
         ],
       ),
@@ -106,6 +102,8 @@ class _HomeScreenState extends State<HomeScreen> {
       calculatorProvider.clear();
     } else if (key == '⌫') {
       calculatorProvider.delete();
+    } else if (key == '=') {
+      calculatorProvider.evaluate();
     } else {
       calculatorProvider.addToExpression(key);
     }
@@ -115,5 +113,94 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_currencyNumpadHandler != null) {
       _currencyNumpadHandler!(key);
     }
+  }
+
+  Widget _buildCalculatorNumpad() {
+    return Consumer<CalculatorProvider>(
+      builder: (context, calculatorProvider, child) {
+        if (_isScientific) {
+          return _buildScientificNumpad(calculatorProvider);
+        } else {
+          return _buildStandardNumpad(calculatorProvider);
+        }
+      },
+    );
+  }
+
+  Widget _buildStandardNumpad(CalculatorProvider provider) {
+    return Column(
+      children: [
+        Expanded(child: _buildCalculatorRow(['C', '⌫', '%', '÷'], provider)),
+        Expanded(child: _buildCalculatorRow(['7', '8', '9', '×'], provider)),
+        Expanded(child: _buildCalculatorRow(['4', '5', '6', '-'], provider)),
+        Expanded(child: _buildCalculatorRow(['1', '2', '3', '+'], provider)),
+        Expanded(child: _buildCalculatorRow(['00', '0', '.', '='], provider)),
+      ],
+    );
+  }
+
+  Widget _buildScientificNumpad(CalculatorProvider provider) {
+    return Column(
+      children: [
+        Expanded(child: _buildCalculatorRow(['sin', 'cos', 'tan', 'log', 'ln'], provider)),
+        Expanded(child: _buildCalculatorRow(['(', ')', '^', '√', '÷'], provider)),
+        Expanded(child: _buildCalculatorRow(['7', '8', '9', 'C', '×'], provider)),
+        Expanded(child: _buildCalculatorRow(['4', '5', '6', '⌫', '-'], provider)),
+        Expanded(child: _buildCalculatorRow(['1', '2', '3', '%', '+'], provider)),
+        Expanded(child: _buildCalculatorRow(['00', '0', '.', 'π', '='], provider)),
+      ],
+    );
+  }
+
+  Widget _buildCalculatorRow(List<String> keys, CalculatorProvider provider) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: keys.map((key) {
+        final isOperator = ['÷', '×', '-', '+', '%', '^', '√', 'sin', 'cos', 'tan', 'log', 'ln', '(', ')'].contains(key);
+        final isEqual = key == '=';
+        final isClear = key == 'C';
+        
+        return Expanded(
+          child: Padding(
+            padding: const EdgeInsets.all(4.0),
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isClear
+                    ? Theme.of(context).colorScheme.error.withValues(alpha: 0.2)
+                    : isOperator
+                        ? Theme.of(context).colorScheme.secondary.withValues(alpha: 0.2)
+                        : isEqual
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).cardColor,
+                foregroundColor: isClear
+                    ? Theme.of(context).colorScheme.error
+                    : isEqual
+                        ? Theme.of(context).colorScheme.onPrimary
+                        : Theme.of(context).textTheme.bodyLarge?.color,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: () => _handleCalculatorKey(key),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2.0, vertical: 4.0),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    key,
+                    style: TextStyle(
+                      fontSize: _isScientific && ['sin', 'cos', 'tan', 'log', 'ln'].contains(key) ? 10 : 16,
+                      fontWeight: isOperator || isEqual ? FontWeight.bold : FontWeight.normal,
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/currency_provider.dart';
+import '../utils/currency_flags.dart';
 
 class CurrencySelectionScreen extends StatelessWidget {
   const CurrencySelectionScreen({super.key});
@@ -70,6 +71,10 @@ class CurrencySelectionScreen extends StatelessWidget {
               final currency = allCurrencies[index];
               final isSelected = currencyProvider.activeCurrencies.contains(currency);
               return ListTile(
+                leading: Text(
+                  getCurrencyFlag(currency),
+                  style: const TextStyle(fontSize: 24),
+                ),
                 title: Text(currency),
                 trailing: isSelected
                     ? Icon(Icons.check, color: Theme.of(context).primaryColor)
