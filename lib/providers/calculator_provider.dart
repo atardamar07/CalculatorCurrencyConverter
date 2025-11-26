@@ -7,29 +7,13 @@ class CalculatorProvider with ChangeNotifier {
   String _expression = '';
   String _result = '0';
   final AdService _adService = AdService();
-  int _clearCount = 0; // Track clear button presses
-  static const int _adFrequency = 5; // Show ad every 5 clears
 
   CalculatorProvider() {
-    _adService.createInterstitialAd();
-    _loadClearCount(); // Load saved count on startup
+    // AdService now handles its own timer-based ad display
   }
 
   String get expression => _expression;
   String get result => _result;
-
-  // Load clear count from SharedPreferences
-  Future<void> _loadClearCount() async {
-    final prefs = await SharedPreferences.getInstance();
-    _clearCount = prefs.getInt('clear_count') ?? 0;
-    notifyListeners();
-  }
-
-  // Save clear count to SharedPreferences
-  Future<void> _saveClearCount() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('clear_count', _clearCount);
-  }
 
   void addToExpression(String value) {
     _expression += value;
@@ -40,16 +24,7 @@ class CalculatorProvider with ChangeNotifier {
     _expression = '';
     _result = '0';
     notifyListeners();
-    
-    // Smart ad display: only show every N clears
-    _clearCount++;
-    _saveClearCount(); // Save after increment
-    
-    if (_clearCount >= _adFrequency) {
-      _adService.showInterstitialAd();
-      _clearCount = 0; // Reset counter
-      _saveClearCount(); // Save reset
-    }
+    // Ad display is now handled by AdService timer (every 5 minutes)
   }
 
   void delete() {
