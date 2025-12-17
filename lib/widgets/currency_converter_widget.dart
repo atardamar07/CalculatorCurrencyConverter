@@ -50,6 +50,25 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
         widget.onNumpadHandlerReady!(handleNumpadKey);
       });
     }
+    
+    // Auto-select first currency when widget becomes active
+    if (widget.isActive && !oldWidget.isActive) {
+      _autoSelectFirstCurrency();
+    }
+  }
+
+  void _autoSelectFirstCurrency() {
+    final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
+    if (currencyProvider.activeCurrencies.isNotEmpty && _selectedCurrency == null) {
+      setState(() {
+        _selectedCurrency = currencyProvider.activeCurrencies[0];
+        _isUserEditing[_selectedCurrency!] = true;
+      });
+      // Set base currency to first one
+      if (_selectedCurrency != currencyProvider.baseCurrency) {
+        currencyProvider.setBaseCurrency(_selectedCurrency!);
+      }
+    }
   }
 
   @override
@@ -86,7 +105,13 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
 
   // Public method to be called from parent
   void handleNumpadKey(String key) {
-    if (!widget.isActive || _selectedCurrency == null) return;
+    if (!widget.isActive) return;
+    
+    // Auto-select first currency if none selected
+    if (_selectedCurrency == null) {
+      _autoSelectFirstCurrency();
+      if (_selectedCurrency == null) return;
+    }
     
     final controller = _controllers[_selectedCurrency];
     if (controller == null) return;
@@ -250,109 +275,192 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
           flex: 3,
           child: currencyProvider.isLoading
               ? const Center(child: CircularProgressIndicator())
-              : ListView.builder(
-                  itemCount: currencyProvider.activeCurrencies.length,
-                  itemBuilder: (context, index) {
-                    final currency = currencyProvider.activeCurrencies[index];
-                    
-                    double value;
-                    if (currency == currencyProvider.baseCurrency) {
-                      value = currencyProvider.amount;
-                    } else {
-                      value = currencyProvider.convert(currency);
-                    }
-
-                    return ListTile(
-                      leading: Text(
-                        getCurrencyFlag(currency),
-                        style: const TextStyle(fontSize: 24),
-                      ),
-                      title: Text(
-                        currency,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      trailing: _isEditing
-                          ? IconButton(
-                              icon: const Icon(Icons.delete, color: Colors.red),
-                              onPressed: () {
-                                currencyProvider.removeCurrency(currency);
-                              },
-                            )
-                          : SizedBox(
-                              width: 150,
-                              child: TextField(
-                                controller: _getController(
-                                  currency,
-                                  value.toStringAsFixed(settingsProvider.precision),
-                                ),
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                decoration: const InputDecoration(
-                                  border: InputBorder.none,
-                                ),
-                                textAlign: TextAlign.right,
-                                readOnly: true, // Make read-only to use numpad only
-                                onChanged: (val) {
-                                  // This won't be called since readOnly is true
-                                  // But we keep it for safety
-                                },
-                                onTap: () {
-                                  setState(() {
-                                    // Reset editing flag for previously selected currency
-                                    if (_selectedCurrency != null && _selectedCurrency != currency) {
-                                      _isUserEditing[_selectedCurrency!] = false;
-                                    }
-                                    _selectedCurrency = currency;
-                                    _isUserEditing[currency] = true;
-                                  });
-                                  
-                                  // Check if calculator has a valid result and use it
-                                  final calculatorProvider = Provider.of<CalculatorProvider>(context, listen: false);
-                                  final calcResult = calculatorProvider.result;
-                                  final calcValue = double.tryParse(calcResult);
-                                  
-                                  if (calcValue != null && calcResult != 'Error' && calcResult != '0') {
-                                    // Use calculator result as the amount
-                                    currencyProvider.setAmount(calcValue);
-                                    final controller = _controllers[currency];
-                                    if (controller != null) {
-                                      final settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
-                                      controller.text = calcValue.toStringAsFixed(settingsProvider.precision);
-                                      controller.selection = TextSelection.fromPosition(
-                                        TextPosition(offset: controller.text.length),
-                                      );
-                                      _isUserEditing[currency] = true;
-                                    }
-                                  }
-                                  
-                                  if (currency != currencyProvider.baseCurrency) {
-                                    currencyProvider.setBaseCurrency(currency);
-                                  }
-                                  if (widget.onCurrencyFieldTapped != null) {
-                                    widget.onCurrencyFieldTapped!();
-                                  }
-                                  // Move cursor to end when tapped and prepare for input
-                                  final controller = _controllers[currency];
-                                  if (controller != null) {
-                                    // If the value is zero, prepare to clear it on first input
-                                    if (_isZeroValue(controller.text)) {
-                                      // Keep the text but mark that we'll clear on first number input
-                                      controller.selection = TextSelection.fromPosition(
-                                        TextPosition(offset: controller.text.length),
-                                      );
-                                    } else {
-                                      controller.selection = TextSelection.fromPosition(
-                                        TextPosition(offset: controller.text.length),
-                                      );
-                                    }
-                                  }
-                                },
-                              ),
-                            ),
-                    );
-                  },
-                ),
+              : _isEditing
+                  ? _buildEditableList(currencyProvider, settingsProvider)
+                  : _buildNormalList(currencyProvider, settingsProvider),
         ),
       ],
+    );
+  }
+
+  Widget _buildEditableList(CurrencyProvider currencyProvider, SettingsProvider settingsProvider) {
+    return ReorderableListView.builder(
+      itemCount: currencyProvider.activeCurrencies.length,
+      onReorder: (oldIndex, newIndex) {
+        currencyProvider.reorderCurrency(oldIndex, newIndex);
+      },
+      itemBuilder: (context, index) {
+        final currency = currencyProvider.activeCurrencies[index];
+        return ListTile(
+          key: ValueKey(currency),
+          leading: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ReorderableDragStartListener(
+                index: index,
+                child: const Icon(Icons.drag_handle, color: Colors.grey),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                getCurrencyFlag(currency),
+                style: const TextStyle(fontSize: 24),
+              ),
+            ],
+          ),
+          title: Text(
+            currency,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          subtitle: Text(
+            getCurrencyName(currency),
+            style: TextStyle(
+              fontSize: 12,
+              color: Theme.of(context).textTheme.bodySmall?.color,
+            ),
+          ),
+          trailing: IconButton(
+            icon: const Icon(Icons.delete, color: Colors.red),
+            onPressed: () {
+              currencyProvider.removeCurrency(currency);
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildNormalList(CurrencyProvider currencyProvider, SettingsProvider settingsProvider) {
+    return ListView.builder(
+      itemCount: currencyProvider.activeCurrencies.length,
+      itemBuilder: (context, index) {
+        final currency = currencyProvider.activeCurrencies[index];
+        
+        double value;
+        if (currency == currencyProvider.baseCurrency) {
+          value = currencyProvider.amount;
+        } else {
+          value = currencyProvider.convert(currency);
+        }
+
+        final isSelected = _selectedCurrency == currency;
+
+        return Container(
+          decoration: BoxDecoration(
+            color: isSelected 
+                ? Theme.of(context).primaryColor.withValues(alpha: 0.1)
+                : null,
+            border: isSelected
+                ? Border(
+                    left: BorderSide(
+                      color: Theme.of(context).primaryColor,
+                      width: 3,
+                    ),
+                  )
+                : null,
+          ),
+          child: ListTile(
+            leading: Text(
+              getCurrencyFlag(currency),
+              style: const TextStyle(fontSize: 24),
+            ),
+            title: Text(
+              currency,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            trailing: SizedBox(
+              width: 150,
+              child: TextField(
+                controller: _getController(
+                  currency,
+                  value.toStringAsFixed(settingsProvider.precision),
+                ),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  border: InputBorder.none,
+                  hintText: '0.00',
+                  hintStyle: TextStyle(
+                    color: Theme.of(context).disabledColor,
+                  ),
+                ),
+                textAlign: TextAlign.right,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  color: isSelected ? Theme.of(context).primaryColor : null,
+                ),
+                readOnly: false, // Allow keyboard input
+                onChanged: (val) {
+                  _isUserEditing[currency] = true;
+                  double? amount = double.tryParse(val);
+                  if (amount != null) {
+                    if (currency != currencyProvider.baseCurrency) {
+                      currencyProvider.setBaseCurrency(currency);
+                    }
+                    currencyProvider.setAmount(amount);
+                  } else if (val.isEmpty) {
+                    currencyProvider.setAmount(0);
+                  }
+                },
+                onTap: () {
+                  setState(() {
+                    // Reset editing flag for previously selected currency
+                    if (_selectedCurrency != null && _selectedCurrency != currency) {
+                      _isUserEditing[_selectedCurrency!] = false;
+                    }
+                    _selectedCurrency = currency;
+                    _isUserEditing[currency] = true;
+                  });
+                  
+                  // Check if calculator has a valid result and use it
+                  final calculatorProvider = Provider.of<CalculatorProvider>(context, listen: false);
+                  final calcResult = calculatorProvider.result;
+                  final calcValue = double.tryParse(calcResult);
+                  
+                  if (calcValue != null && calcResult != 'Error' && calcResult != '0') {
+                    // Use calculator result as the amount
+                    currencyProvider.setAmount(calcValue);
+                    final controller = _controllers[currency];
+                    if (controller != null) {
+                      final settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
+                      controller.text = calcValue.toStringAsFixed(settingsProvider.precision);
+                      controller.selection = TextSelection.fromPosition(
+                        TextPosition(offset: controller.text.length),
+                      );
+                      _isUserEditing[currency] = true;
+                    }
+                  }
+                  
+                  if (currency != currencyProvider.baseCurrency) {
+                    currencyProvider.setBaseCurrency(currency);
+                  }
+                  if (widget.onCurrencyFieldTapped != null) {
+                    widget.onCurrencyFieldTapped!();
+                  }
+                  // Move cursor to end when tapped and prepare for input
+                  final controller = _controllers[currency];
+                  if (controller != null) {
+                    // If the value is zero, prepare to clear it on first input
+                    if (_isZeroValue(controller.text)) {
+                      // Keep the text but mark that we'll clear on first number input
+                      controller.selection = TextSelection.fromPosition(
+                        TextPosition(offset: controller.text.length),
+                      );
+                    } else {
+                      controller.selection = TextSelection.fromPosition(
+                        TextPosition(offset: controller.text.length),
+                      );
+                    }
+                  }
+                },
+                onEditingComplete: () {
+                  _isUserEditing[currency] = false;
+                  FocusScope.of(context).unfocus();
+                },
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

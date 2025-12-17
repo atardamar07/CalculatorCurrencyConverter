@@ -82,6 +82,17 @@ class CurrencyProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  // Reorder currencies (for drag and drop)
+  void reorderCurrency(int oldIndex, int newIndex) {
+    if (oldIndex < newIndex) {
+      newIndex -= 1;
+    }
+    final item = _activeCurrencies.removeAt(oldIndex);
+    _activeCurrencies.insert(newIndex, item);
+    _savePreferences();
+    notifyListeners();
+  }
+
   double convert(String targetCurrency) {
     if (_rates.containsKey(targetCurrency)) {
       return _amount * _rates[targetCurrency]!;

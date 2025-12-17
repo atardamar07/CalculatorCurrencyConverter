@@ -5,6 +5,7 @@ import '../widgets/calculator_widget.dart';
 import '../widgets/currency_converter_widget.dart';
 import '../widgets/numpad_widget.dart';
 import '../providers/calculator_provider.dart';
+import 'history_screen.dart';
 
 enum ActiveMode { calculator, currency }
 
@@ -25,6 +26,18 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Calculator & Currency'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: 'History',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const HistoryScreen()),
+              );
+            },
+          ),
+        ],
       ),
       drawer: const AppDrawer(),
       body: Column(
