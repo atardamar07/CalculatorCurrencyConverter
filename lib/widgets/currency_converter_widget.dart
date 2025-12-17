@@ -80,24 +80,28 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
     super.dispose();
   }
 
+  // Format value smartly: no decimals for whole numbers, otherwise use precision
+  String _formatValue(double value, int precision) {
+    if (value == 0) return '0';
+    if (value == value.truncateToDouble()) {
+      return value.toInt().toString();
+    }
+    return value.toStringAsFixed(precision);
+  }
+
   TextEditingController _getController(String currency, String value) {
     if (!_controllers.containsKey(currency)) {
       _controllers[currency] = TextEditingController(text: value);
       _isUserEditing[currency] = false;
     } else {
-      // Only update text if value changed AND user is not actively editing
-      if (!_isUserEditing[currency]! && _controllers[currency]!.text != value) {
-        final selection = _controllers[currency]!.selection;
+      // Only update if this is NOT the currently selected/editing currency
+      // This allows live updates for other currencies while user types
+      final isCurrentlyEditing = _selectedCurrency == currency && _isUserEditing[currency] == true;
+      if (!isCurrentlyEditing && _controllers[currency]!.text != value) {
         _controllers[currency]!.text = value;
-        // Restore cursor position if valid
-        if (selection.start <= value.length) {
-          _controllers[currency]!.selection = selection;
-        } else {
-          // If cursor position is invalid, place at end
-          _controllers[currency]!.selection = TextSelection.fromPosition(
-            TextPosition(offset: value.length),
-          );
-        }
+        _controllers[currency]!.selection = TextSelection.fromPosition(
+          TextPosition(offset: value.length),
+        );
       }
     }
     return _controllers[currency]!;
@@ -119,7 +123,14 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
     final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
     final settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
     
-    if (key == 'C') {
+    if (key == '✓') {
+      // Done - finish editing and deselect
+      _isUserEditing[_selectedCurrency!] = false;
+      setState(() {
+        _selectedCurrency = null;
+      });
+      return;
+    } else if (key == 'C') {
       controller.clear();
       currencyProvider.setAmount(0);
       _isUserEditing[_selectedCurrency!] = false;
@@ -182,37 +193,43 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
     } else {
       // Number input
       final text = controller.text;
-      final selection = controller.selection;
       
-      // If current value is 0 or 0.00 format, clear it first
-      String currentText = text;
-      if (_isZeroValue(text)) {
-        currentText = '';
-        controller.text = '';
+      // If current value is empty, 0, or 0.00 format, replace with the new digit
+      if (text.isEmpty || text == '0' || _isZeroValue(text)) {
+        controller.text = key;
         controller.selection = TextSelection.fromPosition(
-          TextPosition(offset: 0),
+          TextPosition(offset: key.length),
         );
-      }
-      
-      // Insert number at cursor position
-      final newText = currentText.replaceRange(
-        selection.start,
-        selection.end,
-        key,
-      );
-      controller.text = newText;
-      final newCursorPos = selection.start + 1;
-      controller.selection = TextSelection.fromPosition(
-        TextPosition(offset: newCursorPos),
-      );
-      
-      // Update provider
-      double? amount = double.tryParse(newText);
-      if (amount != null) {
-        if (_selectedCurrency != currencyProvider.baseCurrency) {
-          currencyProvider.setBaseCurrency(_selectedCurrency!);
+        
+        double? amount = double.tryParse(key);
+        if (amount != null) {
+          if (_selectedCurrency != currencyProvider.baseCurrency) {
+            currencyProvider.setBaseCurrency(_selectedCurrency!);
+          }
+          currencyProvider.setAmount(amount);
         }
-        currencyProvider.setAmount(amount);
+      } else {
+        // Append number to existing text
+        final selection = controller.selection;
+        final newText = text.replaceRange(
+          selection.start,
+          selection.end,
+          key,
+        );
+        controller.text = newText;
+        final newCursorPos = selection.start + 1;
+        controller.selection = TextSelection.fromPosition(
+          TextPosition(offset: newCursorPos),
+        );
+        
+        // Update provider
+        double? amount = double.tryParse(newText);
+        if (amount != null) {
+          if (_selectedCurrency != currencyProvider.baseCurrency) {
+            currencyProvider.setBaseCurrency(_selectedCurrency!);
+          }
+          currencyProvider.setAmount(amount);
+        }
       }
       _isUserEditing[_selectedCurrency!] = true;
     }
@@ -372,7 +389,7 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
               child: TextField(
                 controller: _getController(
                   currency,
-                  value.toStringAsFixed(settingsProvider.precision),
+                  _formatValue(value, settingsProvider.precision),
                 ),
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 decoration: InputDecoration(
@@ -423,10 +440,6 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
                     if (controller != null) {
                       final settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
                       controller.text = calcValue.toStringAsFixed(settingsProvider.precision);
-                      controller.selection = TextSelection.fromPosition(
-                        TextPosition(offset: controller.text.length),
-                      );
-                      _isUserEditing[currency] = true;
                     }
                   }
                   
@@ -436,20 +449,17 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
                   if (widget.onCurrencyFieldTapped != null) {
                     widget.onCurrencyFieldTapped!();
                   }
-                  // Move cursor to end when tapped and prepare for input
+                  
+                  // Select all text so user can start typing immediately
                   final controller = _controllers[currency];
-                  if (controller != null) {
-                    // If the value is zero, prepare to clear it on first input
-                    if (_isZeroValue(controller.text)) {
-                      // Keep the text but mark that we'll clear on first number input
-                      controller.selection = TextSelection.fromPosition(
-                        TextPosition(offset: controller.text.length),
+                  if (controller != null && controller.text.isNotEmpty) {
+                    // Use addPostFrameCallback to ensure selection happens after focus
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      controller.selection = TextSelection(
+                        baseOffset: 0,
+                        extentOffset: controller.text.length,
                       );
-                    } else {
-                      controller.selection = TextSelection.fromPosition(
-                        TextPosition(offset: controller.text.length),
-                      );
-                    }
+                    });
                   }
                 },
                 onEditingComplete: () {
