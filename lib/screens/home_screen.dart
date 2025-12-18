@@ -65,6 +65,10 @@ class _HomeScreenState extends State<HomeScreen> {
               onChanged: (val) {
                 setState(() {
                   _isScientific = val;
+                  // Switch to calculator mode when scientific mode is enabled
+                  if (val) {
+                    _activeMode = ActiveMode.calculator;
+                  }
                 });
               },
               dense: true,

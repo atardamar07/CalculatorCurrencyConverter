@@ -5,12 +5,18 @@ import 'providers/theme_provider.dart';
 import 'providers/calculator_provider.dart';
 import 'providers/currency_provider.dart';
 import 'providers/settings_provider.dart';
+import 'services/purchase_service.dart';
 import 'utils/app_theme.dart';
 import 'screens/home_screen.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MobileAds.instance.initialize();
+  
+  // Initialize purchase service
+  final purchaseService = PurchaseService();
+  await purchaseService.initialize();
+  
   runApp(const MyApp());
 }
 

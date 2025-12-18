@@ -8,7 +8,7 @@ class CurrencyProvider with ChangeNotifier {
   String _baseCurrency = 'USD';
   Map<String, double> _rates = {};
   List<String> _activeCurrencies = ['USD', 'EUR', 'TRY', 'GBP']; // Default active
-  double _amount = 1.0;
+  double _amount = 0;
   bool _isLoading = false;
   String? _errorMessage; // Track error details
 

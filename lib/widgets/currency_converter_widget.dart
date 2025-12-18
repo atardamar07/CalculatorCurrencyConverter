@@ -325,7 +325,7 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
             ],
           ),
           title: Text(
-            currency,
+            getCurrencyWithSymbol(currency),
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
           subtitle: Text(
@@ -381,7 +381,7 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
               style: const TextStyle(fontSize: 24),
             ),
             title: Text(
-              currency,
+              getCurrencyWithSymbol(currency),
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             trailing: SizedBox(

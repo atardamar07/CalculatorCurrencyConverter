@@ -153,3 +153,90 @@ final Map<String, String> currencyNames = {
 String getCurrencyName(String currencyCode) {
   return currencyNames[currencyCode] ?? currencyCode;
 }
+
+// Currency code to symbol mapping
+final Map<String, String> currencySymbols = {
+  'USD': '\$',
+  'EUR': '€',
+  'GBP': '£',
+  'JPY': '¥',
+  'CNY': '¥',
+  'AUD': 'A\$',
+  'CAD': 'C\$',
+  'CHF': 'Fr',
+  'INR': '₹',
+  'SGD': 'S\$',
+  'HKD': 'HK\$',
+  'KRW': '₩',
+  'NZD': 'NZ\$',
+  'MXN': 'Mex\$',
+  'BRL': 'R\$',
+  'ZAR': 'R',
+  'RUB': '₽',
+  'TRY': '₺',
+  'SEK': 'kr',
+  'NOK': 'kr',
+  'DKK': 'kr',
+  'PLN': 'zł',
+  'THB': '฿',
+  'IDR': 'Rp',
+  'MYR': 'RM',
+  'PHP': '₱',
+  'VND': '₫',
+  'AED': 'د.إ',
+  'SAR': '﷼',
+  'ILS': '₪',
+  'EGP': 'E£',
+  'ARS': '\$',
+  'CLP': '\$',
+  'COP': '\$',
+  'PEN': 'S/',
+  'UAH': '₴',
+  'CZK': 'Kč',
+  'HUF': 'Ft',
+  'RON': 'lei',
+  'BGN': 'лв',
+  'HRK': 'kn',
+  'ISK': 'kr',
+  'PKR': '₨',
+  'BDT': '৳',
+  'LKR': '₨',
+  'NPR': '₨',
+  'KZT': '₸',
+  'UZS': 'so\'m',
+  'KWD': 'د.ك',
+  'QAR': '﷼',
+  'OMR': '﷼',
+  'BHD': '.د.ب',
+  'JOD': 'د.ا',
+  'LBP': 'ل.ل',
+  'IQD': 'ع.د',
+  'IRR': '﷼',
+  'AFN': '؋',
+  'NGN': '₦',
+  'KES': 'KSh',
+  'ETB': 'Br',
+  'GHS': '₵',
+  'TZS': 'TSh',
+  'UGX': 'USh',
+  'RWF': 'FRw',
+  'MAD': 'د.م.',
+  'TND': 'د.ت',
+  'DZD': 'د.ج',
+  'XOF': 'CFA',
+  'XAF': 'FCFA',
+  'XPF': '₣',
+};
+
+String getCurrencySymbol(String currencyCode) {
+  return currencySymbols[currencyCode] ?? currencyCode;
+}
+
+// Get currency display with symbol: "USD ($)"
+String getCurrencyWithSymbol(String currencyCode) {
+  final symbol = getCurrencySymbol(currencyCode);
+  if (symbol == currencyCode) {
+    return currencyCode;
+  }
+  return '$currencyCode ($symbol)';
+}
