@@ -1,0 +1,125 @@
+{
+  "@@locale": "en",
+  "appTitle": "Calculator & Currency",
+  "history": "History",
+  "scientificMode": "Scientific Mode",
+  "error": "Error",
+  "currencies": "Currencies",
+  "addCurrency": "Add currency",
+  "editCurrencies": "Edit list",
+  "ratesUpdated": "Rates by ExchangeRate-API · {date}",
+  "@ratesUpdated": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "ratesOffline": "Offline · ExchangeRate-API rates from {date}",
+  "@ratesOffline": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "ratesLoadFailed": "Couldn't load exchange rates",
+  "refreshRates": "Refresh rates",
+  "retry": "Retry",
+  "selectCurrency": "Select Currency",
+  "searchCurrency": "Search currency...",
+  "loadingCurrencies": "Loading currencies...",
+  "noCurrencyFound": "No currencies found for \"{query}\"",
+  "@noCurrencyFound": {
+    "placeholders": {
+      "query": {
+        "type": "String"
+      }
+    }
+  },
+  "historyTitle": "Calculation History",
+  "clearHistory": "Clear History",
+  "clearHistoryConfirm": "Are you sure you want to clear all history?",
+  "cancel": "Cancel",
+  "clear": "Clear",
+  "clearAll": "Clear All",
+  "noHistory": "No calculations yet",
+  "noHistoryHint": "Your calculation history will appear here",
+  "historyLoaded": "Loaded: {expression}",
+  "@historyLoaded": {
+    "placeholders": {
+      "expression": {
+        "type": "String"
+      }
+    }
+  },
+  "settings": "Settings",
+  "decimalPrecision": "Decimal Precision",
+  "decimalPlaces": "Number of decimal places: {count}",
+  "@decimalPlaces": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "version": "Version {version}",
+  "@version": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "darkMode": "Dark mode",
+  "removeAds": "Remove Ads",
+  "oneTimePurchase": "One-time purchase",
+  "oneTimePurchaseWithPrice": "{price} · one-time purchase",
+  "@oneTimePurchaseWithPrice": {
+    "placeholders": {
+      "price": {
+        "type": "String"
+      }
+    }
+  },
+  "adsRemoved": "Ads Removed",
+  "thanksForSupport": "Thank you for your support!",
+  "restorePurchases": "Restore Purchases",
+  "restoringPurchases": "Checking your purchases...",
+  "storeUnavailable": "The store is not available right now. Please try again later.",
+  "shareApp": "Share App",
+  "shareAppSubtitle": "Tell your friends about this app",
+  "shareMessage": "Check out Calculator & Currency: a calculator and currency converter in one app!\n\nDownload: {url}",
+  "@shareMessage": {
+    "placeholders": {
+      "url": {
+        "type": "String"
+      }
+    }
+  },
+  "privacyPolicy": "Privacy Policy",
+  "privacySettings": "Privacy settings",
+  "about": "About",
+  "aboutText": "A calculator and currency converter in one app.",
+  "earnAdFreeDay": "Earn an ad-free day",
+  "adsWatchedProgress": "Watch {total} short ads · {count}/{total} watched",
+  "@adsWatchedProgress": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "adFreeUntil": "Ad-free until {time}",
+  "@adFreeUntil": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "noAdAvailable": "No ad available right now. Try again in a moment."
+}

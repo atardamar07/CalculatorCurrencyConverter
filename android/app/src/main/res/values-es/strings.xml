@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Home screen name; copied from appTitle in lib/l10n/app_es.arb -->
+    <string name="app_name">Calculadora y Divisas</string>
+</resources>

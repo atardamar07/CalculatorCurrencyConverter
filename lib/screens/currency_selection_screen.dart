@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/currency_provider.dart';
 import '../utils/currency_flags.dart';
 
@@ -22,6 +23,7 @@ class _CurrencySelectionScreenState extends State<CurrencySelectionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final currencyProvider = Provider.of<CurrencyProvider>(context);
     final allCurrencies = currencyProvider.rates.keys.toList();
     allCurrencies.sort(); // Sort alphabetically
@@ -38,7 +40,7 @@ class _CurrencySelectionScreenState extends State<CurrencySelectionScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Select Currency'),
+        title: Text(l10n.selectCurrency),
       ),
       body: Column(
         children: [
@@ -48,7 +50,7 @@ class _CurrencySelectionScreenState extends State<CurrencySelectionScreen> {
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: 'Search currency...',
+                hintText: l10n.searchCurrency,
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? IconButton(
@@ -78,15 +80,15 @@ class _CurrencySelectionScreenState extends State<CurrencySelectionScreen> {
           Expanded(
             child: Builder(
               builder: (context) {
-                // Loading state
-                if (currencyProvider.isLoading) {
-                  return const Center(
+                // Loading state (only before any rates exist; cached rates stay usable)
+                if (allCurrencies.isEmpty && !currencyProvider.loadFailed) {
+                  return Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        CircularProgressIndicator(),
-                        SizedBox(height: 16),
-                        Text('Loading currencies...'),
+                        const CircularProgressIndicator(),
+                        const SizedBox(height: 16),
+                        Text(l10n.loadingCurrencies),
                       ],
                     ),
                   );
@@ -100,24 +102,12 @@ class _CurrencySelectionScreenState extends State<CurrencySelectionScreen> {
                       children: [
                         const Icon(Icons.error_outline, size: 64, color: Colors.grey),
                         const SizedBox(height: 16),
-                        const Text('Failed to load currencies'),
-                        // Show detailed error message for debugging
-                        if (currencyProvider.errorMessage != null)
-                          Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Text(
-                              currencyProvider.errorMessage!,
-                              style: const TextStyle(fontSize: 12, color: Colors.red),
-                              textAlign: TextAlign.center,
-                              maxLines: 5,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
+                        Text(l10n.ratesLoadFailed),
                         const SizedBox(height: 8),
                         ElevatedButton.icon(
                           onPressed: () => currencyProvider.fetchRates(),
                           icon: const Icon(Icons.refresh),
-                          label: const Text('Retry'),
+                          label: Text(l10n.retry),
                         ),
                       ],
                     ),
@@ -132,7 +122,7 @@ class _CurrencySelectionScreenState extends State<CurrencySelectionScreen> {
                       children: [
                         const Icon(Icons.search_off, size: 64, color: Colors.grey),
                         const SizedBox(height: 16),
-                        Text('No currencies found for "$_searchQuery"'),
+                        Text(l10n.noCurrencyFound(_searchQuery)),
                       ],
                     ),
                   );

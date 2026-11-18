@@ -1,16 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/calculator_provider.dart';
 import '../providers/settings_provider.dart';
 
 class CalculatorWidget extends StatelessWidget {
   final bool isScientific;
-  final bool isActive;
 
   const CalculatorWidget({
     super.key,
     required this.isScientific,
-    this.isActive = false,
   });
 
   @override
@@ -18,19 +17,16 @@ class CalculatorWidget extends StatelessWidget {
     final calculatorProvider = Provider.of<CalculatorProvider>(context);
     final settingsProvider = Provider.of<SettingsProvider>(context);
 
-    // Format result based on precision if it's a number
+    // Whole numbers are shown as the provider formatted them (no int64 clamping);
+    // other results use the precision setting.
     String displayResult = calculatorProvider.result;
-    double? resultValue = double.tryParse(calculatorProvider.result);
-    if (resultValue != null && calculatorProvider.result != 'Error') {
-      // Check if integer
-      if (resultValue % 1 == 0) {
-        displayResult = resultValue.toInt().toString();
-      } else {
-        displayResult = resultValue.toStringAsFixed(settingsProvider.precision);
-        // Remove trailing zeros if needed, or keep fixed? User asked for precision, usually implies fixed.
-        // But standard calculators usually trim trailing zeros.
-        // Let's respect the precision setting strictly for now as requested.
-      }
+    final resultValue = double.tryParse(calculatorProvider.result);
+    if (calculatorProvider.result == 'Error') {
+      displayResult = AppLocalizations.of(context).error;
+    } else if (resultValue != null && resultValue != resultValue.roundToDouble()) {
+      final fixed = resultValue.toStringAsFixed(settingsProvider.precision);
+      // Too small for the chosen decimals (1÷1000 at 2 decimals): show it in full, not as 0.00.
+      displayResult = double.parse(fixed) == 0 ? calculatorProvider.result : fixed;
     }
 
     return Container(
@@ -42,31 +38,38 @@ class CalculatorWidget extends StatelessWidget {
         children: [
           // Expression display
           if (calculatorProvider.expression.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8.0),
-              child: Text(
-                calculatorProvider.expression,
-                style: TextStyle(
-                  fontSize: 20,
-                  color: Theme.of(context).textTheme.bodyLarge?.color?.withValues(alpha: 0.6),
+            Flexible(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 8.0),
+                child: Text(
+                  calculatorProvider.expression,
+                  style: TextStyle(
+                    fontSize: 20,
+                    color: Theme.of(context).textTheme.bodyLarge?.color?.withValues(alpha: 0.6),
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.right,
                 ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          // Result display: shrinks to fit instead of cutting digits off
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Text(
+                displayResult,
+                style: TextStyle(
+                  fontSize: 48,
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
+                  height: 1.2,
+                ),
+                maxLines: 1,
                 textAlign: TextAlign.right,
               ),
             ),
-          // Result display - make it more readable
-          Text(
-            displayResult,
-            style: TextStyle(
-              fontSize: 48,
-              fontWeight: FontWeight.bold,
-              color: Theme.of(context).textTheme.bodyLarge?.color,
-              height: 1.2,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.right,
           ),
         ],
       ),

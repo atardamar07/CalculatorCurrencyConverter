@@ -1,10 +1,16 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../l10n/app_localizations.dart';
+import '../services/ad_service.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/calculator_widget.dart';
 import '../widgets/currency_converter_widget.dart';
+import '../utils/currency_flags.dart';
 import '../widgets/numpad_widget.dart';
 import '../providers/calculator_provider.dart';
+import '../providers/currency_provider.dart';
 import 'history_screen.dart';
 
 enum ActiveMode { calculator, currency }
@@ -20,149 +26,235 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isScientific = false;
   ActiveMode _activeMode = ActiveMode.calculator;
   Function(String)? _currencyNumpadHandler;
+  String? _currencyNamesLocale;
+  late final AppLifecycleListener _lifecycle;
+
+  static const _standardKeys = [
+    ['C', '⌫', '%', '÷'],
+    ['7', '8', '9', '×'],
+    ['4', '5', '6', '-'],
+    ['1', '2', '3', '+'],
+    ['00', '0', '.', '='],
+  ];
+  static const _scientificKeys = [
+    ['sin', 'cos', 'tan', 'log', 'ln'],
+    ['(', ')', '^', '√', '÷'],
+    ['7', '8', '9', 'C', '×'],
+    ['4', '5', '6', '⌫', '-'],
+    ['1', '2', '3', '%', '+'],
+    ['00', '0', '.', 'π', '='],
+  ];
+  static const _currencyKeys = [
+    ['7', '8', '9', 'C'],
+    ['4', '5', '6', '⌫'],
+    ['1', '2', '3', '00'],
+    ['.', '0', '✓'],
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    // Rates can be days old when the app comes back from the background.
+    _lifecycle = AppLifecycleListener(
+      onResume: () => context.read<CurrencyProvider>().refreshIfStale(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Currency names follow the app language (loaded from Android once per language).
+    final locale = Localizations.localeOf(context).toLanguageTag();
+    if (locale != _currencyNamesLocale) {
+      _currencyNamesLocale = locale;
+      loadLocalCurrencyNames(locale).then((_) {
+        if (mounted) setState(() {});
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final calculatorSection = GestureDetector(
+      onTap: () {
+        setState(() {
+          _activeMode = ActiveMode.calculator;
+        });
+      },
+      child: Container(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        // Numbers and keys keep calculator order in right-to-left languages.
+        child: Directionality(
+          textDirection: TextDirection.ltr,
+          child: CalculatorWidget(isScientific: _isScientific),
+        ),
+      ),
+    );
+    final currencySection = GestureDetector(
+      onTap: () {
+        setState(() {
+          _activeMode = ActiveMode.currency;
+        });
+      },
+      child: Container(
+        color: Theme.of(context).cardColor,
+        child: CurrencyConverterWidget(
+          isActive: _activeMode == ActiveMode.currency,
+          onCurrencyFieldTapped: () {
+            setState(() {
+              _activeMode = ActiveMode.currency;
+            });
+          },
+          // Only stored for key presses; nothing on screen depends on it.
+          onNumpadHandlerReady: (handler) => _currencyNumpadHandler = handler,
+        ),
+      ),
+    );
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Calculator & Currency'),
+        // Long translations shrink instead of being cut off.
+        title: FittedBox(fit: BoxFit.scaleDown, child: Text(l10n.appTitle)),
         actions: [
           IconButton(
             icon: const Icon(Icons.history),
-            tooltip: 'History',
-            onPressed: () {
-              Navigator.push(
+            tooltip: l10n.history,
+            onPressed: () async {
+              await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const HistoryScreen()),
               );
+              AdService().showAtTransition();
             },
           ),
         ],
       ),
       drawer: const AppDrawer(),
-      body: Column(
-        children: [
-          // Scientific Mode Switch - moved here to prevent overflow
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: Theme.of(context).cardColor,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: SwitchListTile(
-              title: const Text(
-                "Scientific Mode",
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              value: _isScientific,
-              onChanged: (val) {
-                setState(() {
-                  _isScientific = val;
-                  // Switch to calculator mode when scientific mode is enabled
-                  if (val) {
-                    _activeMode = ActiveMode.calculator;
-                  }
-                });
-              },
-              dense: true,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          ),
-          const Divider(height: 1, thickness: 1),
-          // Calculator Section - reduced size
-          Expanded(
-            flex: 3,
-            child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _activeMode = ActiveMode.calculator;
-                });
-              },
-              child: Container(
-                color: Theme.of(context).scaffoldBackgroundColor,
-                child: CalculatorWidget(
-                  isScientific: _isScientific,
-                  isActive: _activeMode == ActiveMode.calculator,
-                ),
-              ),
-            ),
-          ),
-          const Divider(height: 1, thickness: 1),
-          // Currency Converter Section
-          Expanded(
-            flex: 4,
-            child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _activeMode = ActiveMode.currency;
-                });
-              },
-              child: Container(
+      // Keeps the bottom keypad row above the system navigation bar (edge-to-edge on Android 15+).
+      body: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            // Scientific Mode Switch - moved here to prevent overflow
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
                 color: Theme.of(context).cardColor,
-                child: CurrencyConverterWidget(
-                  isActive: _activeMode == ActiveMode.currency,
-                  onCurrencyFieldTapped: () {
-                    setState(() {
-                      _activeMode = ActiveMode.currency;
-                    });
-                  },
-                  onNumpadHandlerReady: (handler) {
-                    setState(() {
-                      _currencyNumpadHandler = handler;
-                    });
-                  },
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: SwitchListTile(
+                title: Text(
+                  l10n.scientificMode,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                value: _isScientific,
+                onChanged: (val) {
+                  setState(() {
+                    _isScientific = val;
+                    // Switch to calculator mode when scientific mode is enabled
+                    if (val) {
+                      _activeMode = ActiveMode.calculator;
+                    }
+                  });
+                },
+                dense: true,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
             ),
-          ),
-          const Divider(height: 1, thickness: 1),
-          // Shared Numpad with animation
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut,
-            height: _activeMode == ActiveMode.calculator ? 320 : 240,
-            padding: const EdgeInsets.all(8),
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              transitionBuilder: (Widget child, Animation<double> animation) {
-                return FadeTransition(
-                  opacity: animation,
-                  child: SlideTransition(
-                    position: Tween<Offset>(
-                      begin: const Offset(0.0, 0.1),
-                      end: Offset.zero,
-                    ).animate(animation),
-                    child: child,
-                  ),
-                );
-              },
-              child: _activeMode == ActiveMode.calculator
-                  ? Container(
-                      key: ValueKey('calculator_numpad_$_isScientific'),
-                      child: _buildCalculatorNumpad(),
-                    )
-                  : NumpadWidget(
-                      key: const ValueKey('currency_numpad'),
-                      onKeyPressed: (key) => _handleCurrencyKey(key),
+            const Divider(height: 1, thickness: 1),
+            // Calculator and currency share the space above the keypad; while
+            // amounts are typed the calculator shrinks so more currencies fit.
+            Expanded(
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(
+                  end: _activeMode == ActiveMode.calculator ? 3 / 7 : 1 / 4,
+                ),
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+                builder: (context, calculatorShare, _) => Column(
+                  children: [
+                    Expanded(
+                      flex: (calculatorShare * 1000).round(),
+                      child: calculatorSection,
                     ),
+                    const Divider(height: 1, thickness: 1),
+                    Expanded(
+                      flex: ((1 - calculatorShare) * 1000).round(),
+                      child: currencySection,
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
-        ],
+            const Divider(height: 1, thickness: 1),
+            // Shared Numpad with animation
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              // Short screens give part of the keypad's height to the currency list.
+              height: math.min(
+                _activeMode == ActiveMode.calculator ? 320.0 : 240.0,
+                MediaQuery.sizeOf(context).height * 0.42,
+              ),
+              padding: const EdgeInsets.all(8),
+              child: Directionality(
+                textDirection: TextDirection.ltr,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  transitionBuilder:
+                      (Widget child, Animation<double> animation) {
+                        return FadeTransition(
+                          opacity: animation,
+                          child: SlideTransition(
+                            position: Tween<Offset>(
+                              begin: const Offset(0.0, 0.1),
+                              end: Offset.zero,
+                            ).animate(animation),
+                            child: child,
+                          ),
+                        );
+                      },
+                  // The keys never change, so typing does not rebuild them.
+                  child: _activeMode == ActiveMode.calculator
+                      ? NumpadWidget(
+                          key: ValueKey('calculator_numpad_$_isScientific'),
+                          rows: _isScientific ? _scientificKeys : _standardKeys,
+                          onKeyPressed: _handleCalculatorKey,
+                        )
+                      : NumpadWidget(
+                          key: const ValueKey('currency_numpad'),
+                          rows: _currencyKeys,
+                          onKeyPressed: _handleCurrencyKey,
+                        ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   void _handleCalculatorKey(String key) {
-    final calculatorProvider = Provider.of<CalculatorProvider>(context, listen: false);
+    final calculatorProvider = Provider.of<CalculatorProvider>(
+      context,
+      listen: false,
+    );
     if (key == 'C') {
       calculatorProvider.clear();
     } else if (key == '⌫') {
@@ -178,147 +270,5 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_currencyNumpadHandler != null) {
       _currencyNumpadHandler!(key);
     }
-  }
-
-  Widget _buildCalculatorNumpad() {
-    return Consumer<CalculatorProvider>(
-      builder: (context, calculatorProvider, child) {
-        if (_isScientific) {
-          return _buildScientificNumpad(calculatorProvider);
-        } else {
-          return _buildStandardNumpad(calculatorProvider);
-        }
-      },
-    );
-  }
-  
-  Widget _buildStandardNumpad(CalculatorProvider provider) {
-    return Container(
-      key: const ValueKey('standard_calculator_numpad'),
-      child: Column(
-        children: [
-          Expanded(child: _buildCalculatorRow(['C', '⌫', '%', '÷'], provider)),
-          Expanded(child: _buildCalculatorRow(['7', '8', '9', '×'], provider)),
-          Expanded(child: _buildCalculatorRow(['4', '5', '6', '-'], provider)),
-          Expanded(child: _buildCalculatorRow(['1', '2', '3', '+'], provider)),
-          Expanded(child: _buildCalculatorRow(['00', '0', '.', '='], provider)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildScientificNumpad(CalculatorProvider provider) {
-    return Container(
-      key: const ValueKey('scientific_calculator_numpad'),
-      child: Column(
-        children: [
-          Expanded(child: _buildCalculatorRow(['sin', 'cos', 'tan', 'log', 'ln'], provider)),
-          Expanded(child: _buildCalculatorRow(['(', ')', '^', '√', '÷'], provider)),
-          Expanded(child: _buildCalculatorRow(['7', '8', '9', 'C', '×'], provider)),
-          Expanded(child: _buildCalculatorRow(['4', '5', '6', '⌫', '-'], provider)),
-          Expanded(child: _buildCalculatorRow(['1', '2', '3', '%', '+'], provider)),
-          Expanded(child: _buildCalculatorRow(['00', '0', '.', 'π', '='], provider)),
-        ],
-      ),
-    );
-  }
-
-
-  Widget _buildCalculatorRow(List<String> keys, CalculatorProvider provider) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: keys.map((key) {
-        final isOperator = ['÷', '×', '-', '+', '%', '^', '√', 'sin', 'cos', 'tan', 'log', 'ln', '(', ')'].contains(key);
-        final isEqual = key == '=';
-        final isClear = key == 'C';
-        
-        return Expanded(
-          child: Padding(
-            padding: const EdgeInsets.all(4.0),
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: isEqual
-                    ? LinearGradient(
-                        colors: [
-                          Theme.of(context).colorScheme.primary,
-                          Theme.of(context).colorScheme.primary.withValues(alpha: 0.8),
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      )
-                    : isOperator
-                        ? LinearGradient(
-                            colors: [
-                              Theme.of(context).colorScheme.secondary.withValues(alpha: 0.3),
-                              Theme.of(context).colorScheme.secondary.withValues(alpha: 0.2),
-                            ],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          )
-                        : isClear
-                            ? LinearGradient(
-                                colors: [
-                                  Theme.of(context).colorScheme.error.withValues(alpha: 0.3),
-                                  Theme.of(context).colorScheme.error.withValues(alpha: 0.2),
-                                ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              )
-                            : null,
-                color: isEqual || isOperator || isClear
-                    ? null
-                    : Theme.of(context).cardColor,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: isEqual
-                        ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.3)
-                        : isOperator
-                            ? Theme.of(context).colorScheme.secondary.withValues(alpha: 0.2)
-                            : isClear
-                                ? Theme.of(context).colorScheme.error.withValues(alpha: 0.2)
-                                : Colors.black.withValues(alpha: 0.1),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.transparent,
-                  shadowColor: Colors.transparent,
-                  foregroundColor: isClear
-                      ? Theme.of(context).colorScheme.error
-                      : isEqual
-                          ? Theme.of(context).colorScheme.onPrimary
-                          : Theme.of(context).textTheme.bodyLarge?.color,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  padding: EdgeInsets.zero,
-                ),
-                onPressed: () => _handleCalculatorKey(key),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 2.0, vertical: 4.0),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(
-                      key,
-                      style: TextStyle(
-                        fontSize: _isScientific && ['sin', 'cos', 'tan', 'log', 'ln'].contains(key) ? 10 : 18,
-                        fontWeight: isOperator || isEqual ? FontWeight.bold : FontWeight.w600,
-                        letterSpacing: 0.5,
-                      ),
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      }).toList(),
-    );
   }
 }

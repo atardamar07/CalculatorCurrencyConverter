@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/settings_provider.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -7,17 +8,18 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final settingsProvider = Provider.of<SettingsProvider>(context);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Settings'),
+        title: Text(l10n.settings),
       ),
       body: ListView(
         children: [
           ListTile(
-            title: const Text('Decimal Precision'),
-            subtitle: Text('Number of decimal places: ${settingsProvider.precision}'),
+            title: Text(l10n.decimalPrecision),
+            subtitle: Text(l10n.decimalPlaces(settingsProvider.precision)),
             trailing: DropdownButton<int>(
               value: settingsProvider.precision,
               items: [1, 2, 3, 4, 5, 6].map((int value) {
@@ -32,13 +34,6 @@ class SettingsScreen extends StatelessWidget {
                 }
               },
             ),
-          ),
-          // Add Home Currency setting here if needed, or keep it in the main UI interactions
-          const Divider(),
-          ListTile(
-            title: const Text('About'),
-            subtitle: const Text('Calculator & Currency Converter v1.0.0'),
-            leading: const Icon(Icons.info),
           ),
         ],
       ),

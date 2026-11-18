@@ -1,19 +1,29 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/theme_provider.dart';
 import '../screens/settings_screen.dart';
-import '../services/purchase_service.dart';
 import '../services/ad_service.dart';
+import '../services/purchase_service.dart';
+
+const String appVersion = '1.1.0'; // keep in sync with the version in pubspec.yaml
+const String privacyPolicyUrl =
+    'https://atardamar07.github.io/CalculatorCurrencyConverter/privacy-policy';
+const String playStoreUrl =
+    'https://play.google.com/store/apps/details?id=com.minicoreapps.calculator';
 
 class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final themeProvider = Provider.of<ThemeProvider>(context);
-    final purchaseService = PurchaseService();
-    
+    final messenger = ScaffoldMessenger.of(context);
+
     return Drawer(
       child: ListView(
         padding: EdgeInsets.zero,
@@ -26,9 +36,9 @@ class AppDrawer extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                const Text(
-                  'Calculator & Currency',
-                  style: TextStyle(
+                Text(
+                  l10n.appTitle,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
@@ -36,9 +46,9 @@ class AppDrawer extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Version 1.0.3',
+                  l10n.version(appVersion),
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.8),
+                    color: Colors.white.withValues(alpha: 0.8),
                     fontSize: 14,
                   ),
                 ),
@@ -47,46 +57,69 @@ class AppDrawer extends StatelessWidget {
           ),
           ListTile(
             leading: const Icon(Icons.settings),
-            title: const Text('Settings'),
-            onTap: () {
+            title: Text(l10n.settings),
+            onTap: () async {
               Navigator.pop(context);
-              Navigator.push(
+              await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const SettingsScreen()),
               );
+              AdService().showAtTransition();
             },
           ),
           ListTile(
             leading: const Icon(Icons.brightness_6),
-            title: const Text('Theme'),
+            title: Text(l10n.darkMode),
             trailing: Switch(
-              value: themeProvider.isDarkMode,
-              onChanged: (value) {
-                themeProvider.toggleTheme(value);
-              },
+              // The theme actually on screen, also while it follows the system setting
+              value: Theme.of(context).brightness == Brightness.dark,
+              onChanged: themeProvider.toggleTheme,
             ),
           ),
           // Remove Ads Button
-          FutureBuilder<bool>(
-            future: _checkAdsRemoved(),
-            builder: (context, snapshot) {
-              final adsRemoved = snapshot.data ?? false;
-              
-              if (adsRemoved) {
+          Consumer<PurchaseService>(
+            builder: (context, purchases, child) {
+              if (purchases.isPurchased) {
                 return ListTile(
                   leading: const Icon(Icons.check_circle, color: Colors.green),
-                  title: const Text('Ads Removed'),
-                  subtitle: const Text('Thank you for your support!'),
+                  title: Text(l10n.adsRemoved),
+                  subtitle: Text(l10n.thanksForSupport),
                 );
               }
-              
+              final price = purchases.products.isEmpty ? null : purchases.products.first.price;
               return ListTile(
                 leading: const Icon(Icons.remove_circle_outline, color: Colors.orange),
-                title: const Text('Remove Ads'),
-                subtitle: const Text('\$1.99 - One-time purchase'),
+                title: Text(l10n.removeAds),
+                subtitle: Text(price == null ? l10n.oneTimePurchase : l10n.oneTimePurchaseWithPrice(price)),
+                enabled: !purchases.isLoading,
+                onTap: () async {
+                  Navigator.pop(context);
+                  // Google Play shows its own confirmation sheet with the local price.
+                  if (!await purchases.buyRemoveAds()) {
+                    messenger.showSnackBar(SnackBar(content: Text(l10n.storeUnavailable)));
+                  }
+                },
+              );
+            },
+          ),
+          // Optional rewarded ads: every few watched ads give a day without interstitials
+          Consumer2<PurchaseService, AdService>(
+            builder: (context, purchases, ads, child) {
+              if (purchases.isPurchased || !ads.rewardedAvailable) return const SizedBox.shrink();
+              final until = ads.adFreeUntil;
+              final locale = Localizations.localeOf(context).toString();
+              return ListTile(
+                leading: const Icon(Icons.ondemand_video, color: Colors.blue),
+                title: Text(l10n.earnAdFreeDay),
+                subtitle: Text(until != null
+                    ? l10n.adFreeUntil(DateFormat.MMMd(locale).add_Hm().format(until))
+                    : l10n.adsWatchedProgress(ads.rewardsWatched, AdService.rewardsForAdFreeDay)),
+                enabled: until == null,
                 onTap: () {
                   Navigator.pop(context);
-                  _showPurchaseDialog(context);
+                  if (!ads.showRewardedAd()) {
+                    messenger.showSnackBar(SnackBar(content: Text(l10n.noAdAvailable)));
+                  }
                 },
               );
             },
@@ -94,51 +127,51 @@ class AppDrawer extends StatelessWidget {
           const Divider(),
           ListTile(
             leading: const Icon(Icons.restore),
-            title: const Text('Restore Purchases'),
+            title: Text(l10n.restorePurchases),
             onTap: () async {
               Navigator.pop(context);
-              final purchaseService = PurchaseService();
-              await purchaseService.initialize();
-              await purchaseService.restorePurchases();
-              
-              if (purchaseService.isPurchased) {
-                AdService().setAdsRemoved(true);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Purchases restored successfully!')),
-                  );
-                }
-              } else {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('No purchases to restore')),
-                  );
-                }
-              }
+              // The result arrives on the purchase stream and updates the tile above.
+              final started = await PurchaseService().restorePurchases();
+              messenger.showSnackBar(SnackBar(
+                content: Text(started ? l10n.restoringPurchases : l10n.storeUnavailable),
+              ));
             },
           ),
           ListTile(
             leading: const Icon(Icons.share),
-            title: const Text('Share App'),
-            subtitle: const Text('Tell your friends about this app'),
+            title: Text(l10n.shareApp),
+            subtitle: Text(l10n.shareAppSubtitle),
             onTap: () {
               Navigator.pop(context);
-              Share.share(
-                'Check out Calculator & Currency Converter - A powerful calculator and currency converter app!\n\n'
-                'Download now: https://play.google.com/store/apps/details?id=com.minicoreapps.calculator',
-                subject: 'Calculator & Currency Converter',
-              );
+              Share.share(l10n.shareMessage(playStoreUrl), subject: l10n.appTitle);
             },
           ),
           ListTile(
+            leading: const Icon(Icons.privacy_tip_outlined),
+            title: Text(l10n.privacyPolicy),
+            onTap: () {
+              Navigator.pop(context);
+              launchUrl(Uri.parse(privacyPolicyUrl), mode: LaunchMode.externalApplication);
+            },
+          ),
+          if (AdService().privacyOptionsRequired)
+            ListTile(
+              leading: const Icon(Icons.manage_accounts_outlined),
+              title: Text(l10n.privacySettings),
+              onTap: () {
+                Navigator.pop(context);
+                AdService().showPrivacyOptions();
+              },
+            ),
+          ListTile(
             leading: const Icon(Icons.info_outline),
-            title: const Text('About'),
+            title: Text(l10n.about),
             onTap: () {
               Navigator.pop(context);
               showAboutDialog(
                 context: context,
-                applicationName: 'Calculator & Currency',
-                applicationVersion: '1.0.3',
+                applicationName: l10n.appTitle,
+                applicationVersion: appVersion,
                 applicationIcon: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: Image.asset(
@@ -148,121 +181,10 @@ class AppDrawer extends StatelessWidget {
                   ),
                 ),
                 children: [
-                  const Text('A powerful calculator and currency converter app.'),
+                  Text(l10n.aboutText),
                 ],
               );
             },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<bool> _checkAdsRemoved() async {
-    final purchaseService = PurchaseService();
-    await purchaseService.initialize();
-    return purchaseService.isPurchased;
-  }
-
-  void _showPurchaseDialog(BuildContext context) async {
-    final purchaseService = PurchaseService();
-    await purchaseService.initialize();
-    
-    if (!context.mounted) return;
-    
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.remove_circle_outline, color: Colors.orange),
-            SizedBox(width: 8),
-            Text('Remove Ads'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Enjoy an ad-free experience!',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            const Text('• No more interruptions'),
-            const Text('• One-time payment'),
-            const Text('• Lifetime access'),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    purchaseService.products.isNotEmpty 
-                        ? purchaseService.products.first.price 
-                        : '\$1.99',
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (purchaseService.errorMessage != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  purchaseService.errorMessage!,
-                  style: const TextStyle(color: Colors.red, fontSize: 12),
-                ),
-              ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: purchaseService.isLoading 
-                ? null 
-                : () async {
-                    await purchaseService.buyRemoveAds();
-                    if (purchaseService.isPurchased) {
-                      AdService().setAdsRemoved(true);
-                      if (dialogContext.mounted) {
-                        Navigator.pop(dialogContext);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Thank you! Ads have been removed.'),
-                            backgroundColor: Colors.green,
-                          ),
-                        );
-                      }
-                    }
-                  },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
-            ),
-            child: purchaseService.isLoading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Text('Purchase'),
           ),
         ],
       ),

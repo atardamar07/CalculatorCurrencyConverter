@@ -34,13 +34,14 @@ android {
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
-        targetSdk = 35
+        targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
     signingConfigs {
-        create("release") {
+        // key.properties stays out of git; without it debug builds must still work.
+        if (keystorePropertiesFile.exists()) create("release") {
             keyAlias = keystoreProperties["keyAlias"] as String
             keyPassword = keystoreProperties["keyPassword"] as String
             storeFile = file(keystoreProperties["storeFile"] as String)
@@ -50,7 +51,9 @@ android {
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = signingConfigs.getByName(
+                if (keystorePropertiesFile.exists()) "release" else "debug",
+            )
         }
     }
 }

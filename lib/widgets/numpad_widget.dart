@@ -1,91 +1,103 @@
 import 'package:flutter/material.dart';
 
+// The app's one keypad, for calculations and for currency amounts.
 class NumpadWidget extends StatelessWidget {
-  final Function(String) onKeyPressed;
-  final bool showDecimal;
-  
+  final List<List<String>> rows;
+  final ValueChanged<String> onKeyPressed;
+
   const NumpadWidget({
     super.key,
+    required this.rows,
     required this.onKeyPressed,
-    this.showDecimal = true,
   });
+
+  static final _operators = '÷ × - + % ^ √ sin cos tan log ln ( )'
+      .split(' ')
+      .toSet();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(8),
-      child: Column(
-        children: [
-          _buildRow(context, ['7', '8', '9', 'C']),
-          _buildRow(context, ['4', '5', '6', '⌫']),
-          _buildRow(context, ['1', '2', '3', '00']),
-          _buildRow(context, ['.', '0', '✓']),
-        ],
-      ),
+    return Column(
+      children: [
+        for (final row in rows)
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final key in row) Expanded(child: _buildKey(context, key)),
+              ],
+            ),
+          ),
+      ],
     );
   }
 
-  Widget _buildRow(BuildContext context, List<String> keys) {
-    return Expanded(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: keys.map((key) {
-          final isClear = key == 'C';
-          final isDone = key == '✓';
-          
-          Color? bgColor;
-          Color? fgColor;
-          
-          if (isClear) {
-            bgColor = Theme.of(context).colorScheme.error.withOpacity(0.2);
-            fgColor = Theme.of(context).colorScheme.error;
-          } else if (isDone) {
-            bgColor = Colors.green.withOpacity(0.3);
-            fgColor = Colors.green;
-          } else {
-            bgColor = Theme.of(context).cardColor;
-            fgColor = Theme.of(context).textTheme.bodyLarge?.color;
-          }
-          
-          return Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(4),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: bgColor,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 8,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
+  Widget _buildKey(BuildContext context, String key) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    // Keys are tinted by role; digits stay plain.
+    final (Color? tint, Color? textColor) = switch (key) {
+      '=' => (scheme.primary, scheme.onPrimary),
+      'C' => (scheme.error, scheme.error),
+      '✓' => (Colors.green, Colors.green),
+      _ when _operators.contains(key) => (scheme.secondary, null),
+      _ => (null, null),
+    };
+    final solid = key == '=';
+
+    return Padding(
+      padding: const EdgeInsets.all(4),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: tint == null ? theme.cardColor : null,
+          gradient: tint == null
+              ? null
+              : LinearGradient(
+                  colors: solid
+                      ? [tint, tint.withValues(alpha: 0.8)]
+                      : [
+                          tint.withValues(alpha: 0.3),
+                          tint.withValues(alpha: 0.2),
+                        ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.transparent,
-                    shadowColor: Colors.transparent,
-                    foregroundColor: fgColor,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    padding: EdgeInsets.zero,
-                  ),
-                  onPressed: () => onKeyPressed(key),
-                  child: Text(
-                    key,
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: tint == null
+                  ? Colors.black.withValues(alpha: 0.1)
+                  : tint.withValues(alpha: solid ? 0.3 : 0.2),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.transparent,
+            shadowColor: Colors.transparent,
+            foregroundColor: textColor ?? theme.textTheme.bodyLarge?.color,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+          ),
+          onPressed: () => onKeyPressed(key),
+          // Long labels ("sin") shrink to fit small keys.
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              key,
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: tint == null ? FontWeight.w600 : FontWeight.bold,
+                letterSpacing: 0.5,
               ),
             ),
-          );
-        }).toList(),
+          ),
+        ),
       ),
     );
   }

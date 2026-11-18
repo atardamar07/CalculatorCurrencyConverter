@@ -1,8 +1,8 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:math_expressions/math_expressions.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../services/ad_service.dart';
 
 // History item model
 class HistoryItem {
@@ -33,7 +33,23 @@ class CalculatorProvider with ChangeNotifier {
   String _expression = '';
   String _result = '0';
   List<HistoryItem> _history = [];
-  final AdService _adService = AdService();
+  bool _justEvaluated = false;
+
+  static const _operators = ['+', '-', '×', '÷', '^'];
+
+  // Trig functions take degrees like phone calculators; one-argument log is base 10
+  // (the library's own log needs two arguments).
+  static final GrammarParser _parser = GrammarParser()
+    ..functions1.remove('sin')
+    ..functions1.remove('cos')
+    ..functions1.remove('tan')
+    ..addFunction('sin', (a) => math.sin(a[0] * math.pi / 180))
+    ..addFunction('cos', (a) => math.cos(a[0] * math.pi / 180))
+    ..addFunction('tan', (a) {
+      final r = a[0] * math.pi / 180;
+      return math.cos(r).abs() < 1e-12 ? double.nan : math.tan(r); // tan90 is undefined
+    })
+    ..addFunction('log', (a) => math.log(a[0]) / math.ln10);
 
   CalculatorProvider() {
     _loadState();
@@ -48,7 +64,7 @@ class CalculatorProvider with ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _expression = prefs.getString('calc_expression') ?? '';
     _result = prefs.getString('calc_result') ?? '0';
-    
+
     // Load history
     final historyJson = prefs.getString('calc_history');
     if (historyJson != null) {
@@ -62,12 +78,14 @@ class CalculatorProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // Save state to SharedPreferences
-  Future<void> _saveState() async {
+  // Save state to SharedPreferences. History is only rewritten when it changed,
+  // not on every key press.
+  Future<void> _saveState({bool withHistory = false}) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('calc_expression', _expression);
     await prefs.setString('calc_result', _result);
-    
+    if (!withHistory) return;
+
     // Save history (limit to last 50 items)
     if (_history.length > 50) {
       _history = _history.sublist(_history.length - 50);
@@ -77,6 +95,29 @@ class CalculatorProvider with ChangeNotifier {
   }
 
   void addToExpression(String value) {
+    final isOperator = _operators.contains(value);
+    if (_justEvaluated) {
+      _justEvaluated = false;
+      // After "=", an operator or % continues from the result; anything else starts over.
+      final resultIsPlainNumber = double.tryParse(_result) != null && !_result.contains('e');
+      if ((isOperator || value == '%') && resultIsPlainNumber) {
+        _expression = _result;
+      } else {
+        _expression = '';
+        _result = '0';
+      }
+    }
+    if (isOperator && _expression.isNotEmpty) {
+      final last = _expression[_expression.length - 1];
+      // A second operator replaces the first; "×-", "÷-" and "^-" stay for negative numbers.
+      if (_operators.contains(last) && !(value == '-' && '×÷^'.contains(last))) {
+        _expression = _expression.substring(0, _expression.length - 1);
+      }
+    }
+    if (value == '.') {
+      if (RegExp(r'\d*\.\d*$').hasMatch(_expression)) return; // number already has a point
+      if (!RegExp(r'\d$').hasMatch(_expression)) value = '0.';
+    }
     _expression += value;
     _saveState();
     notifyListeners();
@@ -85,13 +126,18 @@ class CalculatorProvider with ChangeNotifier {
   void clear() {
     _expression = '';
     _result = '0';
+    _justEvaluated = false;
     _saveState();
     notifyListeners();
   }
 
   void delete() {
     if (_expression.isNotEmpty) {
-      _expression = _expression.substring(0, _expression.length - 1);
+      _justEvaluated = false;
+      // Function names like "sin" are deleted in one step.
+      final fn = RegExp(r'(sin|cos|tan|log|ln)$').firstMatch(_expression);
+      final cut = fn == null ? 1 : fn.end - fn.start;
+      _expression = _expression.substring(0, _expression.length - cut);
       _saveState();
       notifyListeners();
     }
@@ -101,6 +147,7 @@ class CalculatorProvider with ChangeNotifier {
   void useHistoryItem(HistoryItem item) {
     _expression = item.expression;
     _result = item.result;
+    _justEvaluated = true;
     _saveState();
     notifyListeners();
   }
@@ -108,147 +155,80 @@ class CalculatorProvider with ChangeNotifier {
   // Clear all history
   void clearHistory() {
     _history = [];
-    _saveState();
+    _saveState(withHistory: true);
     notifyListeners();
   }
 
   void evaluate() {
-    try {
-      if (_expression.isEmpty) {
-        _result = '0';
-        notifyListeners();
-        return;
-      }
-
-      // Preprocess expression to handle special cases
-      String finalExpression = _preprocessExpression(_expression);
-      
-      // Remove trailing operators before evaluation
-      finalExpression = _removeTrailingOperators(finalExpression);
-      
-      if (finalExpression.isEmpty) {
-        _result = '0';
-        notifyListeners();
-        return;
-      }
-
-      // Use new GrammarParser instead of deprecated Parser
-      GrammarParser p = GrammarParser();
-      
-      Expression exp = p.parse(finalExpression);
-      // Use new RealEvaluator instead of deprecated evaluate method
-      double eval = RealEvaluator().evaluate(exp).toDouble();
-      
-      // Handle special cases (infinity, NaN)
-      if (eval.isInfinite || eval.isNaN) {
+    final prepared = _prepare(_expression);
+    if (prepared.isEmpty) {
+      _result = '0';
+    } else {
+      try {
+        final value = RealEvaluator().evaluate(_parser.parse(prepared)).toDouble();
+        _result = value.isFinite ? _format(value) : 'Error';
+      } catch (e) {
         _result = 'Error';
-      } else {
-        // Format result
-        if (eval % 1 == 0) {
-          _result = eval.toInt().toString();
-        } else {
-          _result = eval.toString();
-        }
-        
-        // Add to history (only successful calculations)
+      }
+      // Add to history (only successful calculations)
+      if (_result != 'Error') {
         _history.add(HistoryItem(
           expression: _expression,
           result: _result,
           timestamp: DateTime.now(),
         ));
       }
-    } catch (e) {
-      _result = 'Error';
     }
-    _saveState();
+    _justEvaluated = true;
+    _saveState(withHistory: true);
     notifyListeners();
   }
 
-  // Remove trailing operators from expression
-  String _removeTrailingOperators(String expression) {
-    if (expression.isEmpty) return expression;
-    
-    // List of operators that should be removed from the end
-    final operators = ['+', '-', '*', '/', '^'];
-    
-    String result = expression.trim();
-    
-    // Keep removing trailing operators
-    while (result.isNotEmpty && operators.contains(result[result.length - 1])) {
-      result = result.substring(0, result.length - 1).trim();
+  // Turns what the user typed into something the parser accepts.
+  static String _prepare(String input) {
+    var s = _handlePercentage(input.replaceAll('×', '*').replaceAll('÷', '/'));
+    // Implicit multiplication: 2π, 2(…), (…)(…), 2√9, 2sin30, π2, (…)2
+    s = s.replaceAll(RegExp(r'(?<=[\d.)π])(?=[(π√a-z])|(?<=[)π])(?=[\d.])'), '*');
+    // Bare arguments get parentheses: √9 → √(9), sin30 → sin(30), √π → √(π)
+    s = s.replaceAllMapped(
+      RegExp(r'(√|sin|cos|tan|log|ln)(\d+(?:\.\d+)?|π)'),
+      (m) => '${m[1]}(${m[2]})',
+    );
+    s = s.replaceAll('√', 'sqrt').replaceAll('π', 'pi');
+    // Drop trailing operators or a dangling point, then close open parentheses.
+    s = s.replaceFirst(RegExp(r'[+\-*/^.]+$'), '');
+    final open = '('.allMatches(s).length - ')'.allMatches(s).length;
+    return s + ')' * math.max(open, 0);
+  }
+
+  // a+b% → a+(a)*b/100 like phone calculators (200+10% = 220); any other b% → b/100.
+  static String _handlePercentage(String s) {
+    final m = RegExp(r'(?<=[\d.)π])([+\-])(\d+(?:\.\d+)?)%').firstMatch(s);
+    if (m == null) {
+      return s.replaceAllMapped(RegExp(r'(\d+(?:\.\d+)?)%'), (m) => '(${m[1]}/100)');
     }
-    
-    return result;
-  }
-
-  String _preprocessExpression(String expression) {
-    if (expression.isEmpty) return expression;
-    
-    String result = expression;
-    
-    // Replace visual symbols with math operators
-    result = result.replaceAll('×', '*');
-    result = result.replaceAll('÷', '/');
-    result = result.replaceAll('π', '3.1415926535897932');
-    
-    // Handle percentage
-    result = _handlePercentage(result);
-    
-    // Handle square root
-    result = _handleSquareRoot(result);
-    
-    // Handle power
-    result = _handlePower(result);
-    
-    // Handle trigonometric and logarithmic functions
-    result = _handleFunctions(result);
-    
-    return result;
-  }
-
-  String _handlePercentage(String expression) {
-    String result = expression;
-    RegExp percentagePattern = RegExp(r'(\d+(?:\.\d+)?)%');
-    result = result.replaceAllMapped(percentagePattern, (match) {
-      String number = match.group(1)!;
-      return '($number/100)';
-    });
-    return result;
-  }
-
-  String _handleSquareRoot(String expression) {
-    String result = expression;
-    
-    // First handle √(expression)
-    RegExp sqrtWithParens = RegExp(r'√\(([^)]+)\)');
-    result = result.replaceAllMapped(sqrtWithParens, (match) {
-      return 'sqrt(${match.group(1)})';
-    });
-    
-    // Then handle √number (without parentheses)
-    RegExp sqrtNumber = RegExp(r'√(\d+(?:\.\d+)?)');
-    result = result.replaceAllMapped(sqrtNumber, (match) {
-      return 'sqrt(${match.group(1)})';
-    });
-    
-    return result;
-  }
-
-  String _handlePower(String expression) {
-    return expression;
-  }
-
-  String _handleFunctions(String expression) {
-    String result = expression;
-    List<String> functions = ['sin', 'cos', 'tan', 'log', 'ln'];
-    
-    for (String func in functions) {
-      RegExp funcWithoutParens = RegExp('\\b$func(?!\\()(\\d+(?:\\.\\d+)?)');
-      result = result.replaceAllMapped(funcWithoutParens, (match) {
-        return '$func(${match.group(1)})';
-      });
+    // The left operand runs back to the nearest unclosed "(" or the start.
+    var start = m.start, depth = 0;
+    while (start > 0) {
+      final c = s[start - 1];
+      if (c == '(' && depth == 0) break;
+      if (c == ')') depth++;
+      if (c == '(') depth--;
+      start--;
     }
-    
-    return result;
+    final left = s.substring(start, m.start);
+    return _handlePercentage(s.replaceRange(m.start, m.end, '${m[1]}($left)*${m[2]}/100'));
+  }
+
+  static String _format(double v) {
+    // shortcut: anything this small is shown as 0 to hide float noise (sin180° = 1e-16);
+    // switch to relative rounding if users need results below 1e-12.
+    if (v.abs() < 1e-12) return '0';
+    // toInt() would clamp at 9223372036854775807, so large values use exponent form.
+    if (v.abs() >= 1e15) {
+      return v.toStringAsExponential(9).replaceFirst(RegExp(r'\.?0+e'), 'e');
+    }
+    final rounded = double.parse(v.toStringAsPrecision(15)); // 0.1+0.2 → 0.3
+    return rounded == rounded.roundToDouble() ? rounded.toInt().toString() : rounded.toString();
   }
 }

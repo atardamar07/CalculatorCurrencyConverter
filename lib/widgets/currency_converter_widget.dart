@@ -1,21 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/currency_provider.dart';
 import '../providers/calculator_provider.dart';
 import '../providers/settings_provider.dart';
 import '../screens/currency_selection_screen.dart';
+import '../services/ad_service.dart';
 import '../utils/currency_flags.dart';
 
 class CurrencyConverterWidget extends StatefulWidget {
   final bool isActive;
-  final Function(String)? onNumpadKey;
   final VoidCallback? onCurrencyFieldTapped;
   final Function(Function(String))? onNumpadHandlerReady;
 
   const CurrencyConverterWidget({
     super.key,
     this.isActive = false,
-    this.onNumpadKey,
     this.onCurrencyFieldTapped,
     this.onNumpadHandlerReady,
   });
@@ -29,45 +32,45 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
   final Map<String, TextEditingController> _controllers = {};
   String? _selectedCurrency; // Track which currency is selected for numpad input
   final Map<String, bool> _isUserEditing = {}; // Track if user is actively editing
+  String? _lastImportedCalcResult; // calculator result already copied into a field
 
   @override
   void initState() {
     super.initState();
-    // Register numpad handler with parent
+    // Register the numpad handler once; this tear-off never changes for this State.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (widget.onNumpadHandlerReady != null) {
-        widget.onNumpadHandlerReady!(handleNumpadKey);
-      }
+      widget.onNumpadHandlerReady?.call(handleNumpadKey);
     });
   }
 
   @override
   void didUpdateWidget(CurrencyConverterWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Re-register if handler changed
-    if (widget.onNumpadHandlerReady != null && oldWidget.onNumpadHandlerReady != widget.onNumpadHandlerReady) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        widget.onNumpadHandlerReady!(handleNumpadKey);
-      });
-    }
-    
-    // Auto-select first currency when widget becomes active
+    // Auto-select first currency when widget becomes active (after this build,
+    // because it changes providers).
     if (widget.isActive && !oldWidget.isActive) {
-      _autoSelectFirstCurrency();
+      WidgetsBinding.instance.addPostFrameCallback((_) => _autoSelectFirstCurrency());
     }
   }
 
   void _autoSelectFirstCurrency() {
+    if (!mounted) return;
     final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
-    if (currencyProvider.activeCurrencies.isNotEmpty && _selectedCurrency == null) {
-      setState(() {
-        _selectedCurrency = currencyProvider.activeCurrencies[0];
-        _isUserEditing[_selectedCurrency!] = true;
-      });
-      // Set base currency to first one
-      if (_selectedCurrency != currencyProvider.baseCurrency) {
-        currencyProvider.setBaseCurrency(_selectedCurrency!);
-      }
+    if (currencyProvider.activeCurrencies.isEmpty || _selectedCurrency != null) return;
+    final first = currencyProvider.activeCurrencies[0];
+    setState(() {
+      _selectedCurrency = first;
+      _isUserEditing[first] = true;
+    });
+    currencyProvider.setBaseCurrency(first);
+    _selectAll(first);
+  }
+
+  // A selected value is replaced by the next key press.
+  void _selectAll(String currency) {
+    final controller = _controllers[currency];
+    if (controller != null) {
+      controller.selection = TextSelection(baseOffset: 0, extentOffset: controller.text.length);
     }
   }
 
@@ -83,7 +86,7 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
   // Format value smartly: no decimals for whole numbers, otherwise use precision
   String _formatValue(double value, int precision) {
     if (value == 0) return '0';
-    if (value == value.truncateToDouble()) {
+    if (value == value.truncateToDouble() && value.abs() < 1e15) {
       return value.toInt().toString();
     }
     return value.toStringAsFixed(precision);
@@ -110,19 +113,21 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
   // Public method to be called from parent
   void handleNumpadKey(String key) {
     if (!widget.isActive) return;
-    
+
     // Auto-select first currency if none selected
     if (_selectedCurrency == null) {
       _autoSelectFirstCurrency();
       if (_selectedCurrency == null) return;
     }
-    
+
     final controller = _controllers[_selectedCurrency];
     if (controller == null) return;
-    
+
     final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
-    final settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
-    
+    // Keys replace a selected value; otherwise they edit the end of the text.
+    final selection = controller.selection;
+    final appending = selection.isValid && selection.isCollapsed;
+
     if (key == '✓') {
       // Done - finish editing and deselect
       _isUserEditing[_selectedCurrency!] = false;
@@ -134,169 +139,141 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
       controller.clear();
       currencyProvider.setAmount(0);
       _isUserEditing[_selectedCurrency!] = false;
-    } else if (key == '⌫') {
-      // Backspace
-      final text = controller.text;
-      final selection = controller.selection;
-      if (selection.start > 0) {
-        final newText = text.replaceRange(
-          selection.start - 1,
-          selection.start,
-          '',
-        );
-        controller.text = newText;
-        controller.selection = TextSelection.fromPosition(
-          TextPosition(offset: selection.start - 1),
-        );
-        
-        double? amount = double.tryParse(newText);
-        if (amount != null) {
-          currencyProvider.setAmount(amount);
-        } else if (newText.isEmpty || newText == '0' || newText == '0.') {
-          currencyProvider.setAmount(0);
-          controller.text = '0';
-          controller.selection = TextSelection.fromPosition(
-            TextPosition(offset: 1),
-          );
-        }
-      }
-    } else if (key == '.') {
-      // Decimal point - check if already exists
-      final text = controller.text;
-      final selection = controller.selection;
-      
-      // If text is empty or just "0", replace with "0."
-      if (text.isEmpty || text == '0' || _isZeroValue(text)) {
-        controller.text = '0.';
-        controller.selection = TextSelection.fromPosition(
-          TextPosition(offset: 2),
-        );
-        currencyProvider.setAmount(0);
-      } else if (!text.contains('.')) {
-        // Insert decimal point if it doesn't exist
-        final newText = text.replaceRange(
-          selection.start,
-          selection.end,
-          '.',
-        );
-        controller.text = newText;
-        controller.selection = TextSelection.fromPosition(
-          TextPosition(offset: selection.start + 1),
-        );
-        
-        double? amount = double.tryParse(newText);
-        if (amount != null) {
-          currencyProvider.setAmount(amount);
-        }
-      }
-      _isUserEditing[_selectedCurrency!] = true;
-    } else {
-      // Number input
-      final text = controller.text;
-      
-      // If current value is empty, 0, or 0.00 format, replace with the new digit
-      if (text.isEmpty || text == '0' || _isZeroValue(text)) {
-        controller.text = key;
-        controller.selection = TextSelection.fromPosition(
-          TextPosition(offset: key.length),
-        );
-        
-        double? amount = double.tryParse(key);
-        if (amount != null) {
-          if (_selectedCurrency != currencyProvider.baseCurrency) {
-            currencyProvider.setBaseCurrency(_selectedCurrency!);
-          }
-          currencyProvider.setAmount(amount);
-        }
-      } else {
-        // Append number to existing text
-        final selection = controller.selection;
-        final newText = text.replaceRange(
-          selection.start,
-          selection.end,
-          key,
-        );
-        controller.text = newText;
-        final newCursorPos = selection.start + 1;
-        controller.selection = TextSelection.fromPosition(
-          TextPosition(offset: newCursorPos),
-        );
-        
-        // Update provider
-        double? amount = double.tryParse(newText);
-        if (amount != null) {
-          if (_selectedCurrency != currencyProvider.baseCurrency) {
-            currencyProvider.setBaseCurrency(_selectedCurrency!);
-          }
-          currencyProvider.setAmount(amount);
-        }
-      }
-      _isUserEditing[_selectedCurrency!] = true;
+      return;
     }
-  }
 
-  // Check if text represents zero value (0, 0.0, 0.00, etc.)
-  bool _isZeroValue(String text) {
-    if (text.isEmpty) return false;
-    // Remove any formatting and check if it's zero
-    final cleanedText = text.replaceAll(RegExp(r'[^\d.]'), '');
-    final value = double.tryParse(cleanedText);
-    if (value == null) return false;
-    return value == 0.0;
+    var text = appending ? controller.text : '';
+    if (key == '⌫') {
+      text = text.isEmpty ? '' : text.substring(0, text.length - 1);
+      if (text.isEmpty) text = '0';
+    } else if (key == '.') {
+      if (text.contains('.')) return;
+      text = text.isEmpty ? '0.' : '$text.';
+    } else {
+      // Digits and "00", without leading zeros ("0.5" still works)
+      text = (text == '0' ? '' : text) + key;
+      if (RegExp(r'^0+$').hasMatch(text)) text = '0';
+    }
+    controller.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    final amount = double.tryParse(text);
+    if (amount != null) {
+      if (_selectedCurrency != currencyProvider.baseCurrency) {
+        currencyProvider.setBaseCurrency(_selectedCurrency!);
+      }
+      currencyProvider.setAmount(amount);
+    }
+    _isUserEditing[_selectedCurrency!] = true;
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final currencyProvider = Provider.of<CurrencyProvider>(context);
     final settingsProvider = Provider.of<SettingsProvider>(context);
 
+    // The list stays visible while cached rates refresh; a spinner or retry is
+    // only needed before any rates exist.
+    final Widget list;
+    if (currencyProvider.rates.isEmpty) {
+      list = currencyProvider.loadFailed
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(l10n.ratesLoadFailed),
+                  TextButton.icon(
+                    onPressed: currencyProvider.fetchRates,
+                    icon: const Icon(Icons.refresh),
+                    label: Text(l10n.retry),
+                  ),
+                ],
+              ),
+            )
+          : const Center(child: CircularProgressIndicator());
+    } else {
+      list = _isEditing
+          ? _buildEditableList(currencyProvider, settingsProvider)
+          : _buildNormalList(currencyProvider, settingsProvider);
+    }
+
     return Column(
       children: [
-        // Header
+        // Header (the rates line sits under the title so it costs no list height)
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                "Currencies",
-                style: Theme.of(context).textTheme.titleMedium,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      l10n.currencies,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    if (currencyProvider.updatedAt != null) _buildRatesStatus(currencyProvider, l10n),
+                  ],
+                ),
               ),
-              Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.add),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const CurrencySelectionScreen()),
-                      );
-                    },
-                  ),
-                  IconButton(
-                    icon: Icon(_isEditing ? Icons.check : Icons.edit),
-                    onPressed: () {
-                      setState(() {
-                        _isEditing = !_isEditing;
-                      });
-                    },
-                  ),
-                ],
+              if (currencyProvider.loadFailed && currencyProvider.rates.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.refresh),
+                  tooltip: l10n.refreshRates,
+                  onPressed: currencyProvider.isLoading ? null : currencyProvider.fetchRates,
+                ),
+              IconButton(
+                icon: const Icon(Icons.add),
+                tooltip: l10n.addCurrency,
+                onPressed: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const CurrencySelectionScreen()),
+                  );
+                  AdService().showAtTransition();
+                },
+              ),
+              IconButton(
+                icon: Icon(_isEditing ? Icons.check : Icons.edit),
+                tooltip: l10n.editCurrencies,
+                onPressed: () {
+                  setState(() {
+                    _isEditing = !_isEditing;
+                  });
+                },
               ),
             ],
           ),
         ),
         const Divider(height: 1),
         // List
-        Expanded(
-          flex: 3,
-          child: currencyProvider.isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : _isEditing
-                  ? _buildEditableList(currencyProvider, settingsProvider)
-                  : _buildNormalList(currencyProvider, settingsProvider),
-        ),
+        Expanded(child: list),
       ],
+    );
+  }
+
+  // Source, date and offline state of the rates. ExchangeRate-API's free plan
+  // requires this attribution link.
+  Widget _buildRatesStatus(CurrencyProvider currencyProvider, AppLocalizations l10n) {
+    final date = DateFormat.yMMMd(Localizations.localeOf(context).toString())
+        .format(currencyProvider.updatedAt!);
+    final failed = currencyProvider.loadFailed;
+    return InkWell(
+      onTap: () => launchUrl(
+        Uri.parse('https://www.exchangerate-api.com'),
+        mode: LaunchMode.externalApplication,
+      ),
+      child: Text(
+        failed ? l10n.ratesOffline(date) : l10n.ratesUpdated(date),
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: failed ? Theme.of(context).colorScheme.error : null,
+            ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
     );
   }
 
@@ -338,6 +315,10 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
           trailing: IconButton(
             icon: const Icon(Icons.delete, color: Colors.red),
             onPressed: () {
+              // The keypad must not keep typing into a row that is gone.
+              if (_selectedCurrency == currency) {
+                setState(() => _selectedCurrency = null);
+              }
               currencyProvider.removeCurrency(currency);
             },
           ),
@@ -351,7 +332,7 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
       itemCount: currencyProvider.activeCurrencies.length,
       itemBuilder: (context, index) {
         final currency = currencyProvider.activeCurrencies[index];
-        
+
         double value;
         if (currency == currencyProvider.baseCurrency) {
           value = currencyProvider.amount;
@@ -363,7 +344,7 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
 
         return Container(
           decoration: BoxDecoration(
-            color: isSelected 
+            color: isSelected
                 ? Theme.of(context).primaryColor.withValues(alpha: 0.1)
                 : null,
             border: isSelected
@@ -391,7 +372,9 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
                   currency,
                   _formatValue(value, settingsProvider.precision),
                 ),
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                // The app's own numpad is the keyboard; a hardware keyboard still works.
+                keyboardType: TextInputType.none,
+                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
                 decoration: InputDecoration(
                   border: InputBorder.none,
                   hintText: '0.00',
@@ -405,7 +388,6 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
                   fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                   color: isSelected ? Theme.of(context).primaryColor : null,
                 ),
-                readOnly: false, // Allow keyboard input
                 onChanged: (val) {
                   _isUserEditing[currency] = true;
                   double? amount = double.tryParse(val);
@@ -427,40 +409,22 @@ class _CurrencyConverterWidgetState extends State<CurrencyConverterWidget> {
                     _selectedCurrency = currency;
                     _isUserEditing[currency] = true;
                   });
-                  
-                  // Check if calculator has a valid result and use it
-                  final calculatorProvider = Provider.of<CalculatorProvider>(context, listen: false);
-                  final calcResult = calculatorProvider.result;
+                  // Base first (keeps every row's value), then any new calculator result.
+                  currencyProvider.setBaseCurrency(currency);
+
+                  // Copy a new calculator result into this field, once per result
+                  final calcResult = Provider.of<CalculatorProvider>(context, listen: false).result;
                   final calcValue = double.tryParse(calcResult);
-                  
-                  if (calcValue != null && calcResult != 'Error' && calcResult != '0') {
-                    // Use calculator result as the amount
+                  if (calcValue != null && calcResult != '0' && calcResult != _lastImportedCalcResult) {
+                    _lastImportedCalcResult = calcResult;
                     currencyProvider.setAmount(calcValue);
-                    final controller = _controllers[currency];
-                    if (controller != null) {
-                      final settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
-                      controller.text = calcValue.toStringAsFixed(settingsProvider.precision);
-                    }
+                    _controllers[currency]?.text = _formatValue(calcValue, settingsProvider.precision);
                   }
-                  
-                  if (currency != currencyProvider.baseCurrency) {
-                    currencyProvider.setBaseCurrency(currency);
-                  }
-                  if (widget.onCurrencyFieldTapped != null) {
-                    widget.onCurrencyFieldTapped!();
-                  }
-                  
-                  // Select all text so user can start typing immediately
-                  final controller = _controllers[currency];
-                  if (controller != null && controller.text.isNotEmpty) {
-                    // Use addPostFrameCallback to ensure selection happens after focus
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      controller.selection = TextSelection(
-                        baseOffset: 0,
-                        extentOffset: controller.text.length,
-                      );
-                    });
-                  }
+
+                  widget.onCurrencyFieldTapped?.call();
+
+                  // Select the value after the tap has placed the cursor, so typing replaces it
+                  WidgetsBinding.instance.addPostFrameCallback((_) => _selectAll(currency));
                 },
                 onEditingComplete: () {
                   _isUserEditing[currency] = false;

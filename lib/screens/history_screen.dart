@@ -1,45 +1,53 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/calculator_provider.dart';
 import 'package:intl/intl.dart';
 
 class HistoryScreen extends StatelessWidget {
   const HistoryScreen({super.key});
 
+  // Shared by the app bar button and the floating button.
+  void _confirmClear(BuildContext context, CalculatorProvider provider) {
+    final l10n = AppLocalizations.of(context);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(l10n.clearHistory),
+        content: Text(l10n.clearHistoryConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () {
+              provider.clearHistory();
+              Navigator.pop(context);
+            },
+            child: Text(l10n.clear, style: const TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final dateFormat = DateFormat('HH:mm - dd MMM yyyy', Localizations.localeOf(context).toString());
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Calculation History'),
+        title: Text(l10n.historyTitle),
         actions: [
           Consumer<CalculatorProvider>(
             builder: (context, provider, child) {
               if (provider.history.isEmpty) return const SizedBox.shrink();
               return IconButton(
                 icon: const Icon(Icons.delete_sweep),
-                tooltip: 'Clear History',
-                onPressed: () {
-                  showDialog(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      title: const Text('Clear History'),
-                      content: const Text('Are you sure you want to clear all history?'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text('Cancel'),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            provider.clearHistory();
-                            Navigator.pop(context);
-                          },
-                          child: const Text('Clear', style: TextStyle(color: Colors.red)),
-                        ),
-                      ],
-                    ),
-                  );
-                },
+                tooltip: l10n.clearHistory,
+                onPressed: () => _confirmClear(context, provider),
               );
             },
           ),
@@ -59,7 +67,7 @@ class HistoryScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'No calculations yet',
+                    l10n.noHistory,
                     style: TextStyle(
                       fontSize: 18,
                       color: Theme.of(context).disabledColor,
@@ -67,7 +75,7 @@ class HistoryScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Your calculation history will appear here',
+                    l10n.noHistoryHint,
                     style: TextStyle(
                       fontSize: 14,
                       color: Theme.of(context).disabledColor,
@@ -86,8 +94,7 @@ class HistoryScreen extends StatelessWidget {
             separatorBuilder: (context, index) => const Divider(height: 1),
             itemBuilder: (context, index) {
               final item = reversedHistory[index];
-              final dateFormat = DateFormat('HH:mm - dd MMM yyyy');
-              
+
               return ListTile(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 title: Text(
@@ -127,7 +134,7 @@ class HistoryScreen extends StatelessWidget {
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('Loaded: ${item.expression}'),
+                      content: Text(l10n.historyLoaded(item.expression)),
                       duration: const Duration(seconds: 2),
                     ),
                   );
@@ -141,30 +148,9 @@ class HistoryScreen extends StatelessWidget {
         builder: (context, provider, child) {
           if (provider.history.isEmpty) return const SizedBox.shrink();
           return FloatingActionButton.extended(
-            onPressed: () {
-              showDialog(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('Clear History'),
-                  content: const Text('Are you sure you want to clear all history?'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancel'),
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        provider.clearHistory();
-                        Navigator.pop(context);
-                      },
-                      child: const Text('Clear', style: TextStyle(color: Colors.red)),
-                    ),
-                  ],
-                ),
-              );
-            },
+            onPressed: () => _confirmClear(context, provider),
             icon: const Icon(Icons.delete_sweep),
-            label: const Text('Clear All'),
+            label: Text(l10n.clearAll),
             backgroundColor: Colors.red,
             foregroundColor: Colors.white,
           );
